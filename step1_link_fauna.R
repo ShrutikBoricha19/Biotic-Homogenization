@@ -91,6 +91,8 @@ irvingtonian_loc_raw   <- read_input(irvingtonian_loc_file)
 #
 # Column names are compared ignoring case, spaces, dots and underscores,
 # so "Machine Number", "Machine.Number" and "machine_number" all match.
+# Options are listed in order of preference: if a file has several
+# candidates (e.g. both LATDD and Latitude), the first one listed is used.
 # =============================================================================
 
 cat("\n=== 3. IDENTIFYING COLUMNS ===\n")
@@ -105,26 +107,52 @@ column_options <- list(
   lon      = c("longdd", "longitude", "long", "lng", "lon")
 )
 
-find_col <- function(df, field, file, required = TRUE) {
-  hit <- names(df)[simplify_name(names(df)) %in% column_options[[field]]]
+find_col <- function(df, field, file) {
+  simple <- simplify_name(names(df))
 
-  if (length(hit) == 1) return(hit)
+  for (option in column_options[[field]]) {
+    hit <- names(df)[simple == option]
+    if (length(hit) > 1) {
+      stop("Several columns in ", file, " are all called '", option, "': ",
+           paste(hit, collapse = ", "))
+    }
+    if (length(hit) == 1) return(hit)
+  }
 
-  if (length(hit) > 1) {
-    stop("More than one '", field, "' column in ", file, ": ",
-         paste(hit, collapse = ", "))
-  }
-  if (required) {
-    stop("No '", field, "' column found in ", file,
-         ".\nColumns in this file: ", paste(names(df), collapse = " | "))
-  }
-  NA_character_
+  stop("No '", field, "' column found in ", file,
+       ".\nColumns in this file: ", paste(names(df), collapse = " | "))
+}
+
+# Other columns that could also have been used for a field (for reporting).
+other_candidates <- function(df, field, used) {
+  hits <- names(df)[simplify_name(names(df)) %in% column_options[[field]]]
+  setdiff(hits, used)
 }
 
 show_cols <- function(df, file, fields) {
   cols <- sapply(fields, function(f) find_col(df, f, file))
   cat("  ", file, "\n", sep = "")
-  for (f in fields) cat(sprintf("      %-9s -> \"%s\"\n", f, cols[[f]]))
+
+  for (f in fields) {
+    others <- other_candidates(df, f, cols[[f]])
+    note <- if (length(others)) {
+      paste0("   (also present, not used: ", paste(others, collapse = ", "), ")")
+    } else ""
+    cat(sprintf("      %-9s -> \"%s\"%s\n", f, cols[[f]], note))
+
+    # If an unused coordinate column exists, show whether it agrees.
+    if (f %in% c("lat", "lon")) {
+      for (o in others) {
+        a <- suppressWarnings(as.numeric(df[[cols[[f]]]]))
+        b <- suppressWarnings(as.numeric(df[[o]]))
+        both <- !is.na(a) & !is.na(b)
+        cat(sprintf(
+          "                  %s vs %s: %d rows differ by > 0.001 degree; %d rows have only %s\n",
+          cols[[f]], o, sum(abs(a[both] - b[both]) > 0.001), sum(is.na(a) & !is.na(b)), o
+        ))
+      }
+    }
+  }
   cols
 }
 
