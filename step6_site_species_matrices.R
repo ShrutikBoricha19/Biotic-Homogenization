@@ -5,11 +5,11 @@
 # from FAUNMAP and PBDB, and draws each matrix as a heatmap (PDF + PNG).
 #
 # Inputs:
-#   faunalf.csv                         FAUNMAP fauna (Machine Number,
-#                                       Analysis Unit, Genus, Species, Order,
-#                                       and a site name if it has one)
-#   SiteName_Reference_Table.csv        optional: site names for pairs that are
-#                                       not in the locality files
+#   Outputs/1_linked/blancan_fauna.csv        FAUNMAP fauna with their site names
+#   Outputs/1_linked/irvingtonian_fauna.csv   (Step 1: Machine Number, Analysis
+#                                             Unit, SiteName_Linked, taxonomy)
+#   faunalf.csv (optional)                    only used to fill in a missing Order
+#                                             for a genus
 #   Outputs/3_stages/faunmap_localities.csv   FAUNMAP site, stage, lat/long (Step 3)
 #   Outputs/3_stages/pbdb_occurrences.csv     PBDB occurrences with stage,
 #                                             lat/long and taxonomy (Step 3)
@@ -18,11 +18,13 @@
 #
 # Rules:
 #   - Sites: FAUNMAP SiteName, PBDB collection_name (one row per site per stage).
-#   - FAUNMAP fauna are linked to their FAUNMAP site (SiteName, stage,
-#     coordinates), like PBDB occurrences are linked to their collection:
-#       1. by Machine Number + Analysis Unit (1234 and 1234.00 are equal);
-#       2. if that fails, by the site name written in the fauna file;
-#       3. if that fails, by the site name the reference table gives the pair.
+#   - FAUNMAP fauna (Step 1 files, which already carry each record's site
+#     name) are joined to the stage-binned localities of Step 3, like PBDB
+#     occurrences are joined to their collection:
+#       1. by period + Machine Number + Analysis Unit (1234 = 1234.00);
+#       2. if that fails, by Machine Number + Analysis Unit in the other
+#          period's locality file;
+#       3. if that fails, by the record's site name (SiteName_Linked).
 #     A record is placed in every stage its locality (or named site) occurs in.
 #     How every record was linked is saved in faunmap_link_log.csv.
 #   - Each genus gets one order (the order most of its records use).
@@ -87,8 +89,9 @@ write_xlsx <- function(x, path, ...) {
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-faunmap_fauna_file  <- "faunalf.csv"
-site_reference_file <- "SiteName_Reference_Table.csv"   # optional
+blancan_fauna_file      <- file.path("Outputs", "1_linked", "blancan_fauna.csv")
+irvingtonian_fauna_file <- file.path("Outputs", "1_linked", "irvingtonian_fauna.csv")
+order_lookup_file       <- "faunalf.csv"   # optional: Order for genera lacking one
 faunmap_sites_file  <- file.path("Outputs", "3_stages", "faunmap_localities.csv")
 pbdb_file           <- file.path("Outputs", "3_stages", "pbdb_occurrences.csv")
 site_index_file     <- file.path("Outputs", "3_stages", "site_index.csv")
@@ -204,62 +207,58 @@ save_both <- function(df, name) {
 
 cat("=== 1. READING FILES ===\n")
 
-needed <- c(faunmap_fauna_file, faunmap_sites_file, pbdb_file, site_index_file)
+needed <- c(blancan_fauna_file, irvingtonian_fauna_file, faunmap_sites_file,
+            pbdb_file, site_index_file)
 found <- file.exists(file.path(work_dir, needed))
 for (i in seq_along(needed)) {
   cat(if (found[i]) "  [found]   " else "  [MISSING] ", needed[i], "\n", sep = "")
 }
-if (!found[1]) {
-  cat("\n  Files in the folder whose name contains 'fauna':\n")
-  cat(paste0("    ", list.files(work_dir, pattern = "fauna", ignore.case = TRUE)), sep = "\n")
-}
-if (!all(found)) stop("Some input files were not found (run Step 3 first for the Outputs files).")
+if (!all(found)) stop("Some input files were not found (run Steps 1-3 first).")
 
-faunmap_fauna_raw <- read_input(faunmap_fauna_file)
+faunmap_fauna_raw <- bind_rows(
+  read_input(blancan_fauna_file) %>% mutate(.period = "Blancan"),
+  read_input(irvingtonian_fauna_file) %>% mutate(.period = "Irvingtonian")
+)
 faunmap_sites_raw <- read_input(faunmap_sites_file)
 pbdb_raw          <- read_input(pbdb_file)
 site_index_raw    <- read_input(site_index_file)
-site_reference_raw <- if (file.exists(file.path(work_dir, site_reference_file))) {
-  read_input(site_reference_file)
-} else {
-  cat("  (", site_reference_file, " not found - reference-table linking skipped)\n", sep = "")
-  NULL
-}
+order_lookup_raw <- if (file.exists(file.path(work_dir, order_lookup_file))) {
+  read_input(order_lookup_file)
+} else NULL
 
 # =============================================================================
-# 2. FAUNMAP: LINK EACH FAUNA RECORD TO ITS SITE, STAGE AND COORDINATES
+# 2. FAUNMAP: JOIN EACH FAUNA RECORD TO ITS STAGE-BINNED LOCALITY
 #
-# Like PBDB occurrences (which carry their collection name), every FAUNMAP
-# fauna record is tied to a FAUNMAP site, trying in order:
-#   1. Machine Number + Analysis Unit -> the locality row(s) of that pair
-#   2. the site name written in the fauna file -> localities with that name
-#   3. the reference table's site name for the pair -> localities with that name
+# The Step 1 fauna files already give every record its site name and its
+# Machine Number + Analysis Unit. Here each record is joined to the Step 3
+# localities (stage, coordinates), trying in order:
+#   1. period + Machine Number + Analysis Unit
+#   2. Machine Number + Analysis Unit in the other period's locality file
+#   3. the record's site name (SiteName_Linked)
 # =============================================================================
 
 cat("\n=== 2. FAUNMAP FAUNA ===\n")
 
 f_machine  <- find_col(faunmap_fauna_raw, c("machinenumber", "machineno", "machine"), "Machine Number")
 f_analysis <- find_col(faunmap_fauna_raw, c("analysisunit"), "Analysis Unit")
+f_site     <- find_col(faunmap_fauna_raw, c("sitenamelinked", "localitysitename", "sitename",
+                                            "referencesitename"), "site name", required = FALSE)
 f_genus    <- find_col(faunmap_fauna_raw, c("genus", "genusname"), "Genus")
 f_species  <- find_col(faunmap_fauna_raw, c("species", "speciesname", "specificepithet"), "Species")
-f_order    <- find_col(faunmap_fauna_raw, c("order", "ordername"), "Order")
-f_site     <- find_col(faunmap_fauna_raw, c("sitename", "site", "localityname", "locality"),
-                       "site name", required = FALSE)
-f_period   <- find_col(faunmap_fauna_raw, c("faunmapperiod", "period", "nalma"), "period",
-                       required = FALSE)
+f_order    <- find_col(faunmap_fauna_raw, c("order", "ordername"), "Order", required = FALSE)
 
-cat(sprintf("  Columns used: Machine='%s', Analysis Unit='%s', Genus='%s', Species='%s', Order='%s'\n",
-            f_machine, f_analysis, f_genus, f_species, f_order))
-cat(sprintf("                Site name=%s, Period=%s\n",
-            if (is.na(f_site)) "(none)" else paste0("'", f_site, "'"),
-            if (is.na(f_period)) "(none)" else paste0("'", f_period, "'")))
+cat(sprintf("  Columns used: Machine='%s', Analysis Unit='%s', Site name=%s\n",
+            f_machine, f_analysis, if (is.na(f_site)) "(none)" else paste0("'", f_site, "'")))
+cat(sprintf("                Genus='%s', Species='%s', Order=%s\n", f_genus, f_species,
+            if (is.na(f_order)) "(none - taken from faunalf.csv / PBDB by genus)" else
+              paste0("'", f_order, "'")))
 
 name_key <- function(x) gsub("\\s+", " ", tolower(clean_text(x)))
 
-# All staged FAUNMAP locality rows (a pair or a site name can have several).
+# All stage-binned FAUNMAP locality rows (a pair can have several).
 site_lookup <- faunmap_sites_raw %>%
   transmute(
-    FAUNMAP_Period,
+    .period = FAUNMAP_Period,
     .mk = Machine_Key,
     .ak = clean_text(Analysis_Key),
     SiteName = clean_text(SiteName_Std),
@@ -271,64 +270,71 @@ site_lookup <- faunmap_sites_raw %>%
   filter(!is.na(SiteName), Stage_Number %in% 1:5) %>%
   distinct()
 
-join_by_period <- !is.na(f_period)
-key_cols <- if (join_by_period) c("FAUNMAP_Period", ".mk", ".ak") else c(".mk", ".ak")
-
 faunmap_records <- faunmap_fauna_raw %>%
   mutate(
     .rec = row_number(),
-    FAUNMAP_Period = if (join_by_period) title_word(.data[[f_period]]) else NA_character_,
     .mk = machine_key(.data[[f_machine]]),
     .ak = clean_text(.data[[f_analysis]]),
     Fauna_SiteName = if (!is.na(f_site)) clean_text(.data[[f_site]]) else NA_character_,
     .nk = name_key(Fauna_SiteName),
     Genus = title_word(.data[[f_genus]]),
-    Order = title_word(.data[[f_order]])
+    Order = if (!is.na(f_order)) title_word(.data[[f_order]]) else NA_character_
   ) %>%
   mutate(Species = clean_species(Genus, .data[[f_species]]))
 
-loc_cols <- c("SiteName", "Latitude", "Longitude", "Stage_Number")
+# Fill a missing Order from faunalf.csv (by genus), if that file is present.
+if (!is.null(order_lookup_raw) && any(is.na(faunmap_records$Order))) {
+  lk_genus <- find_col(order_lookup_raw, c("genus", "genusname"), "Genus", required = FALSE)
+  lk_order <- find_col(order_lookup_raw, c("order", "ordername"), "Order", required = FALSE)
+  if (!is.na(lk_genus) && !is.na(lk_order)) {
+    genus_order_lookup <- order_lookup_raw %>%
+      transmute(Genus = title_word(.data[[lk_genus]]), .lk_order = title_word(.data[[lk_order]])) %>%
+      filter(!is.na(Genus), !is.na(.lk_order)) %>%
+      count(Genus, .lk_order) %>%
+      arrange(Genus, desc(n)) %>%
+      distinct(Genus, .keep_all = TRUE) %>%
+      select(-n)
+    n_before <- sum(is.na(faunmap_records$Order))
+    faunmap_records <- faunmap_records %>%
+      left_join(genus_order_lookup, by = "Genus") %>%
+      mutate(Order = coalesce(Order, .lk_order)) %>%
+      select(-.lk_order)
+    cat(sprintf("  Order filled from %s for %d of %d records lacking one\n",
+                order_lookup_file, n_before - sum(is.na(faunmap_records$Order)), n_before))
+  }
+}
 
-# 1. Machine Number + Analysis Unit
-link_pair <- faunmap_records %>%
+loc_cols <- c("SiteName", "Latitude", "Longitude", "Stage_Number")
+pair_lookup <- filter(site_lookup, !is.na(.mk), !is.na(.ak))
+
+# 1. Same period + Machine Number + Analysis Unit
+link_1 <- faunmap_records %>%
   filter(!is.na(.mk), !is.na(.ak)) %>%
-  select(.rec, all_of(key_cols)) %>%
-  inner_join(filter(site_lookup, !is.na(.mk), !is.na(.ak)) %>%
-               select(all_of(key_cols), all_of(loc_cols)),
-             by = key_cols, relationship = "many-to-many") %>%
+  select(.rec, .period, .mk, .ak) %>%
+  inner_join(select(pair_lookup, .period, .mk, .ak, all_of(loc_cols)),
+             by = c(".period", ".mk", ".ak"), relationship = "many-to-many") %>%
   transmute(.rec, across(all_of(loc_cols)), Link_Method = "Machine Number + Analysis Unit")
 
-# 2. Site name in the fauna file
-left <- setdiff(faunmap_records$.rec, link_pair$.rec)
-link_name <- faunmap_records %>%
+# 2. Machine Number + Analysis Unit in the other period's locality file
+left <- setdiff(faunmap_records$.rec, link_1$.rec)
+link_2 <- faunmap_records %>%
+  filter(.rec %in% left, !is.na(.mk), !is.na(.ak)) %>%
+  select(.rec, .mk, .ak) %>%
+  inner_join(select(pair_lookup, .mk, .ak, all_of(loc_cols)),
+             by = c(".mk", ".ak"), relationship = "many-to-many") %>%
+  transmute(.rec, across(all_of(loc_cols)),
+            Link_Method = "Machine Number + Analysis Unit (other period file)")
+
+# 3. The record's site name
+left <- setdiff(left, link_2$.rec)
+link_3 <- faunmap_records %>%
   filter(.rec %in% left, !is.na(.nk)) %>%
   select(.rec, .nk) %>%
   inner_join(select(site_lookup, .nk, all_of(loc_cols)), by = ".nk",
              relationship = "many-to-many") %>%
-  transmute(.rec, across(all_of(loc_cols)), Link_Method = "Site name in fauna file")
+  transmute(.rec, across(all_of(loc_cols)), Link_Method = "Site name")
 
-# 3. Reference-table site name for the pair
-left <- setdiff(left, link_name$.rec)
-link_ref <- NULL
-if (!is.null(site_reference_raw)) {
-  ref <- site_reference_raw %>%
-    transmute(
-      .mk = machine_key(.data[[find_col(site_reference_raw, c("machinenumber", "machineno", "machine"), "Machine Number")]]),
-      .ak = clean_text(.data[[find_col(site_reference_raw, c("analysisunit"), "Analysis Unit")]]),
-      .nk = name_key(.data[[find_col(site_reference_raw, c("sitename", "site"), "site name")]])
-    ) %>%
-    filter(!is.na(.mk), !is.na(.ak), !is.na(.nk)) %>%
-    distinct()
-  link_ref <- faunmap_records %>%
-    filter(.rec %in% left) %>%
-    select(.rec, .mk, .ak) %>%
-    inner_join(ref, by = c(".mk", ".ak"), relationship = "many-to-many") %>%
-    inner_join(select(site_lookup, .nk, all_of(loc_cols)), by = ".nk",
-               relationship = "many-to-many") %>%
-    transmute(.rec, across(all_of(loc_cols)), Link_Method = "Reference-table site name")
-}
-
-links <- bind_rows(link_pair, link_name, link_ref) %>%
+links <- bind_rows(link_1, link_2, link_3) %>%
   distinct(.rec, SiteName, Stage_Number, .keep_all = TRUE) %>%
   group_by(.rec) %>%
   mutate(n_stages = n_distinct(Stage_Number)) %>%
@@ -336,7 +342,7 @@ links <- bind_rows(link_pair, link_name, link_ref) %>%
 
 # Name-only links that point to a site with localities in several stages.
 if (name_link_multi_stage == "skip") {
-  links <- filter(links, Link_Method == "Machine Number + Analysis Unit" | n_stages == 1)
+  links <- filter(links, Link_Method != "Site name" | n_stages == 1)
 }
 
 faunmap_linked <- faunmap_records %>%
@@ -347,8 +353,8 @@ faunmap_linked <- faunmap_records %>%
 
 # Link log: one row per fauna record.
 faunmap_link_log <- faunmap_records %>%
-  select(.rec, Machine_Number = all_of(f_machine), Analysis_Unit = all_of(f_analysis),
-         Fauna_SiteName, Genus, Species, Order) %>%
+  select(.rec, Period = .period, Machine_Number = all_of(f_machine),
+         Analysis_Unit = all_of(f_analysis), Fauna_SiteName, Genus, Species, Order) %>%
   left_join(links %>%
               group_by(.rec) %>%
               summarise(Link_Method = first(Link_Method),
@@ -357,15 +363,16 @@ faunmap_link_log <- faunmap_records %>%
                                               collapse = "; "),
                         n_stages = first(n_stages), .groups = "drop"),
             by = ".rec") %>%
-  mutate(Link_Method = coalesce(Link_Method, "Not linked")) %>%
+  mutate(Link_Method = coalesce(Link_Method, "Not linked (locality has no stage 1-5 or is not in Step 3)")) %>%
   rename(Record = .rec)
 write.csv(faunmap_link_log, file.path(output_dir, "faunmap_link_log.csv"),
           row.names = FALSE, na = "")
 
-cat(sprintf("  %d fauna records:\n", nrow(faunmap_records)))
+cat(sprintf("  %d fauna records (Blancan %d, Irvingtonian %d):\n", nrow(faunmap_records),
+            sum(faunmap_records$.period == "Blancan"), sum(faunmap_records$.period == "Irvingtonian")))
 link_counts <- count(faunmap_link_log, Link_Method, name = "n_records")
 for (i in seq_len(nrow(link_counts))) {
-  cat(sprintf("      %-34s %7d\n", link_counts$Link_Method[i], link_counts$n_records[i]))
+  cat(sprintf("      %-58s %7d\n", link_counts$Link_Method[i], link_counts$n_records[i]))
 }
 cat(sprintf("  Records placed in more than one stage: %d\n",
             sum(faunmap_link_log$n_stages > 1, na.rm = TRUE)))
