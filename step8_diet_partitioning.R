@@ -732,13 +732,13 @@ diet_plot <- function(p) {
     geom_hline(yintercept = c(0.25, 0.5, 0.75, 1), colour = grid_col, linewidth = 0.4) +
     geom_text(data = bands, aes(x = (xmin + xmax) / 2, y = 1.09, label = lab),
               size = base_size / 4.6, colour = ink_soft) +
+    # Grey: overall beta_SIM (all species), 95% range of the site subsets.
+    geom_ribbon(data = overall, aes(x = Mid_Ma, ymin = beta_SIM_lo95, ymax = beta_SIM_hi95),
+                fill = overall_band, alpha = 0.55) +
     # Coloured bars: this group's share of beta_SIM in each stage.
     geom_rect(aes(xmin = stage_young[Stage_Number] + inset, xmax = stage_older[Stage_Number] - inset,
                   ymin = 0, ymax = beta_SIM_f, fill = bar_fill),
               colour = NA, na.rm = TRUE) +
-    # Grey: overall beta_SIM (all species), 95% range of the site subsets.
-    geom_ribbon(data = overall, aes(x = Mid_Ma, ymin = beta_SIM_lo95, ymax = beta_SIM_hi95),
-                fill = overall_band, alpha = 0.55) +
     geom_segment(data = gap_segments(overall),
                  aes(x = Mid_Ma, xend = x2, y = beta_SIM, yend = y2),
                  colour = overall_line, linewidth = 1) +
