@@ -58,6 +58,29 @@ library(tidyr)
 library(ggplot2)
 library(writexl)
 
+# -----------------------------------------------------------------------------
+# Saving that survives locked files. Windows will not overwrite a file that
+# is open in Excel (or briefly locked by OneDrive). Instead of stopping, the
+# output is saved under a new name with "_new" added, and a note is printed.
+# -----------------------------------------------------------------------------
+save_with_fallback <- function(writer, path) {
+  ok <- tryCatch({ writer(path); TRUE }, error = function(e) FALSE,
+                 warning = function(w) FALSE)
+  if (ok) return(invisible(path))
+  alt <- sub("(\\.[A-Za-z]+)$", "_new\\1", path)
+  writer(alt)
+  cat("  NOTE: could not overwrite", basename(path),
+      "(it may be open in Excel or another program) - saved as", basename(alt), "instead\n")
+  invisible(alt)
+}
+
+write.csv <- function(x, file, ...) {
+  save_with_fallback(function(f) utils::write.csv(x, f, ...), file)
+}
+write_xlsx <- function(x, path, ...) {
+  save_with_fallback(function(f) writexl::write_xlsx(x, f, ...), path)
+}
+
 # =============================================================================
 # SETTINGS
 # =============================================================================
@@ -598,10 +621,12 @@ for (s in 1:5) {
 
   width  <- min(max(12, n_si * 0.22 + 4), 50)
   height <- min(max(8, n_sp * 0.16 + 3), 50)
-  ggsave(file.path(output_dir, paste0("heatmap_", stage, ".pdf")), p,
-         width = width, height = height, limitsize = FALSE, bg = "white")
-  ggsave(file.path(output_dir, paste0("heatmap_", stage, ".png")), p,
-         width = width, height = height, dpi = png_dpi, limitsize = FALSE, bg = "white")
+  save_with_fallback(function(f) ggsave(f, p, width = width, height = height,
+                                         limitsize = FALSE, bg = "white"),
+                     file.path(output_dir, paste0("heatmap_", stage, ".pdf")))
+  save_with_fallback(function(f) ggsave(f, p, width = width, height = height, dpi = png_dpi,
+                                         limitsize = FALSE, bg = "white"),
+                     file.path(output_dir, paste0("heatmap_", stage, ".png")))
 
   cat(sprintf("%4d sites x %4d species -> matrix_%s.xlsx/.csv, heatmap_%s.pdf/.png\n",
               n_si, n_sp, stage, stage))
