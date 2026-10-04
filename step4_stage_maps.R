@@ -9,14 +9,19 @@
 #   PBDB site    = collection_name
 # If a site has several coordinate records, the first one is used.
 #
+# State / province boundaries for all three countries come from Natural
+# Earth (1:10m). They are downloaded once (about 20 MB) into
+# Outputs/maps/basemap/ and reused afterwards. If the download fails, the
+# maps fall back to US state boundaries only.
+#
 # Input:  Outputs/3_stages/site_index.csv  (from Step 3)
 # Output: Outputs/maps/  (one PNG per stage + the plotted points as CSV)
 #
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
-# Needs the packages dplyr, ggplot2 and maps.
+# Needs the packages dplyr, ggplot2, maps and sf.
 # =============================================================================
 
-for (pkg in c("dplyr", "ggplot2", "maps")) {
+for (pkg in c("dplyr", "ggplot2", "maps", "sf")) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     stop("Package '", pkg, "' is not installed. Run: install.packages(\"", pkg, "\")")
   }
@@ -24,6 +29,7 @@ for (pkg in c("dplyr", "ggplot2", "maps")) {
 
 library(dplyr)
 library(ggplot2)
+library(sf)
 
 # =============================================================================
 # SETTINGS
@@ -38,6 +44,11 @@ output_dir <- file.path(work_dir, "Outputs", "maps")
 # Map extent (degrees) covering Canada, the USA (incl. Alaska) and Mexico.
 map_xlim <- c(-170, -50)
 map_ylim <- c(14, 84)
+
+state_lines_url <- paste0(
+  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/",
+  "geojson/ne_10m_admin_1_states_provinces_lines.geojson"
+)
 
 point_colour <- "#B2182B"
 point_size   <- 1.6
@@ -131,15 +142,45 @@ base_map <- map_data("world", region = c("Canada", "USA", "Mexico"))
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
+# State / province boundary lines for Canada, the USA and Mexico.
+basemap_dir <- file.path(output_dir, "basemap")
+dir.create(basemap_dir, showWarnings = FALSE)
+state_lines_file <- file.path(basemap_dir, basename(state_lines_url))
+
+if (!file.exists(state_lines_file)) {
+  cat("  Downloading state/province boundaries (one time, about 20 MB)...\n")
+  old_timeout <- options(timeout = 600)
+  ok <- tryCatch({
+    download.file(state_lines_url, state_lines_file, mode = "wb", quiet = TRUE)
+    TRUE
+  }, error = function(e) {
+    cat("  Download failed:", conditionMessage(e), "\n")
+    FALSE
+  })
+  options(old_timeout)
+  if (!ok && file.exists(state_lines_file)) file.remove(state_lines_file)
+}
+
+if (file.exists(state_lines_file)) {
+  state_lines <- st_read(state_lines_file, quiet = TRUE)
+  state_lines <- state_lines[state_lines$ADM0_A3 %in% c("CAN", "USA", "MEX"), ]
+  cat("  State/province boundaries: Canada, USA and Mexico\n")
+} else {
+  # Fallback: US states only, from the maps package.
+  state_lines <- st_as_sf(maps::map("state", plot = FALSE, fill = TRUE))
+  cat("  NOTE: using US state boundaries only (Natural Earth file unavailable)\n")
+}
+
 for (s in 1:5) {
   pts <- filter(map_points, Stage_Number == s)
 
   p <- ggplot() +
     geom_polygon(data = base_map, aes(x = long, y = lat, group = group),
-                 fill = "grey92", colour = "grey55", linewidth = 0.25) +
+                 fill = "grey92", colour = "grey45", linewidth = 0.3) +
+    geom_sf(data = state_lines, fill = NA, colour = "grey60", linewidth = 0.15) +
     geom_point(data = pts, aes(x = Longitude, y = Latitude),
                colour = point_colour, size = point_size, alpha = 0.8) +
-    coord_quickmap(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
+    coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE, crs = 4326) +
     labs(
       title = stage_titles[s],
       subtitle = paste0(nrow(pts), " sites (FAUNMAP + PBDB)"),
