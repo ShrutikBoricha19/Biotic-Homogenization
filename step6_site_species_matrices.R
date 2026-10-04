@@ -15,6 +15,7 @@
 #   - Sites: FAUNMAP SiteName, PBDB collection_name (one row per site per stage).
 #   - FAUNMAP fauna get the stage, SiteName and coordinates of their locality,
 #     matched on Machine Number + Analysis Unit (1234 and 1234.00 are equal).
+#   - Each genus gets one order (the order most of its records use).
 #   - Only the orders in `orders_to_include` are kept.
 #   - "sp." / "cf." / "aff." / "indet." identifications are resolved to a
 #     species of the same genus recorded in the same stage; if none, the next
@@ -26,6 +27,7 @@
 #   heatmap_<stage>.pdf / .png      the matrix drawn as a heatmap
 #   all_records_final.xlsx / .csv   every retained record after resolution
 #   spcf_resolution_log.csv         what happened to each sp./cf. record
+#   genus_order_conflicts.csv       genera recorded under more than one order
 #   summary.xlsx                    stage, order, resolution and site summaries
 #
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
@@ -285,6 +287,32 @@ cat("\n=== 4. COMBINING AND FILTERING ORDERS ===\n")
 
 all_raw <- bind_rows(faunmap_linked, pbdb_records)
 
+# One order per genus. A genus recorded under different orders (e.g. FAUNMAP
+# and PBDB disagree, or a typo) is given the order most of its records use;
+# ties go to the order listed first in `order_levels`, then alphabetically.
+genus_orders <- all_raw %>%
+  filter(!is.na(Order)) %>%
+  count(Genus, Order, name = "n_records") %>%
+  group_by(Genus) %>%
+  mutate(n_orders = n()) %>%
+  arrange(Genus, desc(n_records), match(Order, order_levels), Order) %>%
+  mutate(Assigned_Order = first(Order)) %>%
+  ungroup()
+
+order_conflicts <- genus_orders %>%
+  filter(n_orders > 1) %>%
+  select(Genus, Recorded_Order = Order, n_records, Assigned_Order)
+write.csv(order_conflicts, file.path(output_dir, "genus_order_conflicts.csv"),
+          row.names = FALSE, na = "")
+cat(sprintf("  Genera recorded under more than one order: %d (assigned their majority order;\n",
+            n_distinct(order_conflicts$Genus)),
+    "   see genus_order_conflicts.csv)\n", sep = "")
+
+all_raw <- all_raw %>%
+  left_join(distinct(genus_orders, Genus, Assigned_Order), by = "Genus") %>%
+  mutate(Order = coalesce(Assigned_Order, Order)) %>%
+  select(-Assigned_Order)
+
 order_counts <- count(all_raw, Order, sort = TRUE)
 cat("  Orders present (records):\n")
 print(as.data.frame(head(order_counts, 25)), row.names = FALSE)
@@ -382,8 +410,8 @@ for (s in 1:5) {
 
   # Species order: by taxonomic order, then by number of sites, then name.
   species_info <- bin_data %>%
-    group_by(GenusSpecies, Order) %>%
-    summarise(n_sites = n_distinct(SiteName), .groups = "drop") %>%
+    group_by(GenusSpecies) %>%
+    summarise(Order = first(Order), n_sites = n_distinct(SiteName), .groups = "drop") %>%
     mutate(Order = factor(Order, levels = order_levels)) %>%
     arrange(Order, desc(n_sites), GenusSpecies)
 
