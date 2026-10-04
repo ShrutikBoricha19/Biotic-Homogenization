@@ -61,7 +61,9 @@ output_dir  <- file.path(work_dir, "Outputs", "maps", "physiographic")
 basemap_dir <- file.path(work_dir, "Outputs", "maps", "basemap")   # download cache
 
 # --- USA (local shapefile) ---------------------------------------------------
-us_path <- "C:/Users/shrut/Downloads/physio_shp/.shp"
+# The folder holding the shapefile (or the .shp file itself). The folder is
+# searched for the shapefile, so its exact name does not matter.
+us_path <- "C:/Users/shrut/Downloads/physio_shp"
 us_fields <- c(division = "DIVISION", province = "PROVINCE", section = "SECTION")
 
 # --- Canada (NRCan, downloaded) -------------------------------------------------
@@ -105,23 +107,37 @@ dir.create(basemap_dir, recursive = TRUE, showWarnings = FALSE)
 # HELPERS
 # =============================================================================
 
-# Read the US shapefile. A file literally named ".shp" opens on some systems
-# but not others, so if reading fails the files are copied to a temporary
-# folder under the name "physio.*" and read from there.
+# Read the US shapefile. `path` may be the .shp file or the folder holding it.
+# If the exact file is not found, the folder (and its sub-folders) is searched
+# for shapefiles and the one whose name contains "physio" is used.
 read_us <- function(path) {
-  if (dir.exists(path)) {
-    shp <- list.files(path, pattern = "\\.shp$", full.names = TRUE,
-                      all.files = TRUE, ignore.case = TRUE)
-    if (length(shp) == 0) stop("No .shp file in folder: ", path)
-    path <- shp[1]
+  folder <- if (dir.exists(path)) path else dirname(path)
+  if (!dir.exists(folder)) stop("Folder not found: ", folder)
+
+  if (!dir.exists(path) && file.exists(path)) {
+    shp <- path
+  } else {
+    found <- list.files(folder, pattern = "\\.shp$", full.names = TRUE,
+                        recursive = TRUE, all.files = TRUE, ignore.case = TRUE)
+    cat("  Shapefiles found in", folder, ":\n")
+    if (length(found) == 0) {
+      cat("    (none)\n  Files in the folder:\n")
+      cat(paste0("    ", list.files(folder, recursive = TRUE, all.files = TRUE)), sep = "\n")
+      stop("No .shp file found in ", folder,
+           ". If you downloaded a .zip, unzip it first.")
+    }
+    cat(paste0("    ", found), sep = "\n")
+    pick <- grep("physio", basename(found), ignore.case = TRUE)
+    shp <- found[if (length(pick)) pick[1] else 1]
   }
-  if (!file.exists(path)) {
-    stop("File not found: ", path)
-  }
-  x <- tryCatch(st_read(path, quiet = TRUE), error = function(e) NULL)
+  cat("  Using", shp, "\n")
+
+  x <- tryCatch(st_read(shp, quiet = TRUE), error = function(e) NULL)
   if (!is.null(x)) return(x)
 
-  stem <- sub("\\.shp$", "", path, ignore.case = TRUE)
+  # A file literally named ".shp" opens on some systems but not others:
+  # copy it to a temporary folder under the name "physio.*" and read that.
+  stem <- sub("\\.shp$", "", shp, ignore.case = TRUE)
   tmp <- file.path(tempdir(), "physio_copy")
   dir.create(tmp, showWarnings = FALSE)
   for (ext in c("shp", "shx", "dbf", "prj", "cpg")) {
@@ -252,7 +268,6 @@ read_text_csv <- function(path) {
 # =============================================================================
 
 cat("=== 1. USA: FENNEMAN & JOHNSON (1946) ===\n")
-cat("  Reading", us_path, "\n")
 us_raw <- read_us(us_path)
 
 if (is.na(st_crs(us_raw))) {
