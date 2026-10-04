@@ -46,6 +46,8 @@
 #
 # Outputs (Outputs/8_diet_partitioning/):
 #   diet_partition_<province>.png/.pdf   Fig. 3a-style figure, one per province
+#   endemic_shared_<province>.png/.pdf   Fig. 4a-style figure, one per province
+#   endemic_shared_summary.csv  shared and endemic proportions per diet and stage
 #   diet_partition.csv          beta_SIM_f for every province, stage and diet group
 #   diet_trend_summary.csv      one row per province x diet: values per stage, change
 #   species_diet.csv            every pool species with its diet group and the
@@ -198,20 +200,28 @@ beta_sim_multi <- function(pools) {
   min_sum / (sum(lengths(pools)) - S_T + min_sum)
 }
 
-# Additive partition of multisite beta_SIM by category (Rowan et al. 2024 Eq. 4).
-# Returns the share of each category; the shares add up to beta_SIM.
+# Additive partitions by category (Rowan et al. 2024 Eqs. 4-6). Returns one
+# vector: beta_SIM_f (Eq. 4), then endemic beta_SIM_END_f (Eq. 5), then shared
+# beta_SIM_SH_f (Eq. 6). Each set of shares adds up to the overall metric.
 beta_sim_partition <- function(pools, category_of, categories) {
   k <- length(pools)
   count <- function(sp) tabulate(match(category_of[sp], categories), nbins = length(categories))
   S_T <- length(unique(unlist(pools)))
-  num <- numeric(length(categories)); min_sum <- 0
+  sum_S <- sum(lengths(pools))
+  num <- numeric(length(categories)); min_sum <- 0; a_sum <- 0
   for (i in 1:(k - 1)) for (j in (i + 1):k) {
     b_ij <- setdiff(pools[[i]], pools[[j]]); b_ji <- setdiff(pools[[j]], pools[[i]])
     num <- num + if (length(b_ij) < length(b_ji)) count(b_ij) else
       if (length(b_ij) > length(b_ji)) count(b_ji) else (count(b_ij) + count(b_ji)) / 2
     min_sum <- min_sum + min(length(b_ij), length(b_ji))
+    a_sum <- a_sum + length(intersect(pools[[i]], pools[[j]]))
   }
-  setNames(num / (sum(lengths(pools)) - S_T + min_sum), categories)
+  # Shared part: sum_i S_if - S_Tf, per category.
+  S_if <- Reduce(`+`, lapply(pools, count))
+  S_Tf <- count(unique(unlist(pools)))
+  c(num / (sum_S - S_T + min_sum),
+    num / (min_sum + a_sum),
+    (S_if - S_Tf) / sum_S)
 }
 
 # Subsets of n units, exactly as in Step 7 (all subsets if few, else random).
@@ -334,7 +344,7 @@ silhouette_paths <- c(
 )
 
 # Grob that draws one silhouette, right-aligned in its cell, aspect preserved.
-silhouette_grob <- function(diet, colour) {
+silhouette_grob <- function(diet, colour, height_in = icon_height_in) {
   key <- if (diet == "Browser and frugivore") "Browser" else diet
   if (!key %in% names(silhouette_paths)) return(nullGrob())
   parts <- strsplit(silhouette_paths[[key]], ";", fixed = TRUE)[[1]]
@@ -344,7 +354,7 @@ silhouette_grob <- function(diet, colour) {
   }))
   w <- diff(range(xy$x)); h <- diff(range(xy$y))
   vp <- viewport(x = unit(1, "npc") - unit(10, "pt"), y = unit(0.5, "npc"),
-                 width = unit(icon_height_in * w / h, "in"), height = unit(icon_height_in, "in"),
+                 width = unit(height_in * w / h, "in"), height = unit(height_in, "in"),
                  just = c("right", "centre"))
   pathGrob((xy$x - min(xy$x)) / w, 1 - (xy$y - min(xy$y)) / h, id = xy$id,
            rule = "evenodd", gp = gpar(fill = colour, col = NA), vp = vp)
@@ -588,11 +598,14 @@ partition <- bind_rows(lapply(provinces, function(p) bind_rows(lapply(1:5, funct
                         nbins = length(categories))
   if (length(subsets) == 0) {
     return(data.frame(Province = p, Stage_Number = s, Diet = categories, beta_SIM_f = NA_real_,
+                      beta_END_f = NA_real_, beta_SH_f = NA_real_,
                       beta_SIM_within_group = NA_real_, n_species = n_by_diet,
                       n_units = length(units), beta_SIM = NA_real_, beta_SIM_lo95 = NA_real_,
                       beta_SIM_hi95 = NA_real_))
   }
-  parts <- sapply(subsets, function(ix) beta_sim_partition(units[ix], category_of, categories))
+  all_parts <- sapply(subsets, function(ix) beta_sim_partition(units[ix], category_of, categories))
+  nc <- length(categories)
+  parts <- all_parts[1:nc, , drop = FALSE]
   totals <- colSums(parts)
   # Dissimilarity of each group on its own (same subsets; for reference).
   within <- vapply(categories, function(f) {
@@ -602,7 +615,10 @@ partition <- bind_rows(lapply(provinces, function(p) bind_rows(lapply(1:5, funct
     if (all(is.na(v))) NA_real_ else mean(v, na.rm = TRUE)
   }, numeric(1))
   data.frame(Province = p, Stage_Number = s, Diet = categories,
-             beta_SIM_f = rowMeans(parts), beta_SIM_within_group = unname(within),
+             beta_SIM_f = rowMeans(parts),
+             beta_END_f = rowMeans(all_parts[nc + 1:nc, , drop = FALSE]),
+             beta_SH_f = rowMeans(all_parts[2 * nc + 1:nc, , drop = FALSE]),
+             beta_SIM_within_group = unname(within),
              n_species = n_by_diet, n_units = length(units),
              beta_SIM = mean(totals),
              beta_SIM_lo95 = unname(quantile(totals, 0.025)),
@@ -792,6 +808,118 @@ for (p in provinces) {
   missing <- setdiff(diet_levels, unique(as.character(plt$data$Diet)))
   cat(sprintf("  %-16s %d diet panels%s\n", p, n_panels,
               if (length(missing)) paste0(" (no species: ", paste(missing, collapse = ", "), ")") else ""))
+}
+
+# =============================================================================
+# 6. ENDEMIC VS SHARED SPECIES BY DIET (Rowan et al. 2024 Fig. 4a, Eqs. 5-6)
+#
+#   Endemic (bottom row):  beta_SIM_END_f = sum_{i<j} min(b_ij, b_ji)_f /
+#                                           [ sum_{i<j} min(b_ij, b_ji) + a_ij ]
+#   Shared (top row):      beta_SIM_SH_f  = ( sum_i S_if - S_Tf ) / sum_i S_i
+#
+#   Endemic = species found at only one of the compared sites (more precisely,
+#   the endemics of whichever site has fewer); shared = species found at two
+#   or more sites. Within a row, the diet groups (plus unclassified species,
+#   not drawn) add up to beta_SIM_END or beta_SIM_SH. Same site subsets as above.
+#   Falling endemic bars + rising shared bars through time = homogenization.
+# =============================================================================
+
+cat("\n=== 6. ENDEMIC VS SHARED SPECIES ===\n")
+
+es_table <- partition %>%
+  filter(Diet != "Unclassified") %>%
+  select(Province, Diet, Stage, beta_SH_f, beta_END_f) %>%
+  pivot_longer(c(beta_SH_f, beta_END_f), names_to = "Component", values_to = "value") %>%
+  mutate(Component = ifelse(Component == "beta_SH_f", "Shared", "Endemic"),
+         value = round(value, 3)) %>%
+  pivot_wider(names_from = Stage, values_from = value) %>%
+  left_join(diet_present, by = c("Province", "Diet")) %>%
+  filter(any_species) %>% select(-any_species) %>%
+  arrange(Province, Component, Diet)
+save_csv(es_table, "endemic_shared_summary")
+print(as.data.frame(es_table), row.names = FALSE)
+
+es_plot <- function(p) {
+  keep <- diet_present %>% filter(Province == p, any_species, Diet != "Unclassified") %>%
+    pull(Diet) %>% as.character()
+  if (length(keep) == 0) return(NULL)
+  comp_levels <- c("Shared species", "Endemic species")
+  d <- partition %>%
+    filter(Province == p, Diet %in% keep) %>%
+    select(Diet, Stage_Number, beta_SIM, beta_SH_f, beta_END_f) %>%
+    pivot_longer(c(beta_SH_f, beta_END_f), names_to = "Component", values_to = "value") %>%
+    mutate(Component = factor(ifelse(Component == "beta_SH_f", comp_levels[1], comp_levels[2]),
+                              levels = comp_levels),
+           Diet = factor(as.character(Diet), levels = keep),
+           bar_fill = diet_colours[as.character(Diet)])
+  ymax <- max(0.1, d$value, na.rm = TRUE) * 1.32
+  # Stages with too few sites: darker band in every panel.
+  no_value <- d %>% filter(is.na(beta_SIM)) %>% distinct(Stage_Number) %>%
+    mutate(xmin = stage_young[Stage_Number], xmax = stage_older[Stage_Number])
+  row_lab <- data.frame(Component = factor(comp_levels, levels = comp_levels),
+                        Diet = factor(keep[1], levels = keep))
+  n_col <- paste0("n_", unit_word)
+  n_tab <- distinct(partition %>% filter(Province == p), Stage_Number, .data[[n_col]])
+  inset <- 0.05
+
+  ggplot(d) +
+    geom_rect(data = bands, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = fill)) +
+    geom_rect(data = no_value, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+              fill = "#dcdcd7", inherit.aes = FALSE) +
+    scale_fill_identity() +
+    geom_hline(yintercept = pretty(c(0, ymax / 1.32), n = 3)[-1], colour = grid_col, linewidth = 0.4) +
+    geom_rect(aes(xmin = stage_young[Stage_Number] + inset, xmax = stage_older[Stage_Number] - inset,
+                  ymin = 0, ymax = value, fill = bar_fill),
+              colour = ink, linewidth = 0.3, na.rm = TRUE) +
+    geom_text(data = row_lab, aes(x = 4.6, y = ymax * 0.97, label = Component),
+              hjust = 0, vjust = 1, size = base_size / 3.6, colour = ink) +
+    facet_grid(Component ~ Diet) +
+    scale_x_reverse(limits = c(4.7, 0.129), breaks = c(4, 3, 2, 1), expand = c(0.01, 0)) +
+    scale_y_continuous(limits = c(0, ymax), breaks = pretty(c(0, ymax / 1.32), n = 3),
+                       expand = c(0, 0)) +
+    labs(title = paste0(p, ": endemic versus shared species by diet"),
+         subtitle = paste0("Proportion of shared (top) and endemic (bottom) species among ", unit_word,
+                           ", stage by stage\nFalling endemic bars + rising shared bars through time = homogenization"),
+         x = "Age (Ma)", y = "Proportion",
+         caption = paste0(
+           "After Rowan et al. (2024, Fig. 4a; Eqs. 5-6), mean of subsets of ", n_units_sample, " ",
+           unit_word, ". Background bands = stages, Zanclean (left) to Chibanian (right); darker band = fewer than ",
+           n_units_sample, " ", unit_word, ".\n", tools::toTitleCase(unit_word), " per stage: ",
+           paste(sprintf("%s %d", substr(stage_names, 1, 4), n_tab[[n_col]][order(n_tab$Stage_Number)]),
+                 collapse = ", "),
+           ". Unclassified species are not drawn. Diets: Smith et al. (aao5987). Silhouettes: game-icons.net (CC BY 3.0).")) +
+    theme_panels() +
+    theme(strip.text.y = element_blank(), strip.background.y = element_blank(),
+          strip.text.x = element_text(face = "bold", size = base_size * 0.64, hjust = 0,
+                                      margin = margin(t = 10, b = 10, l = 6)),
+          axis.text = element_text(colour = ink, size = base_size * 0.62),
+          panel.spacing.x = unit(0.6, "lines"), panel.spacing.y = unit(0.8, "lines"))
+}
+
+# Silhouettes in the column titles of a facet_grid figure.
+add_silhouettes_grid <- function(plt, height_in) {
+  g <- ggplotGrob(plt)
+  lay <- ggplot_build(plt)$layout$layout
+  for (col in sort(unique(lay$COL))) {
+    diet <- as.character(lay$Diet[lay$COL == col][1])
+    pos <- g$layout[g$layout$name %in% c(sprintf("strip-t-%d", col), sprintf("strip-t-%d-1", col)), ]
+    if (nrow(pos) == 0) next
+    pos <- pos[which.min(pos$t), ]
+    g <- gtable::gtable_add_grob(g, silhouette_grob(diet, diet_colours[[diet]], height_in),
+                                 t = pos$t, l = pos$l, b = pos$b, r = pos$r,
+                                 z = Inf, clip = "off", name = paste0("silhouette-col-", col))
+  }
+  g
+}
+
+for (p in provinces) {
+  plt <- es_plot(p)
+  if (is.null(plt)) next
+  n_panels <- length(unique(plt$data$Diet))
+  w <- if (n_panels <= 3) slide_w * 0.75 else slide_w
+  save_fig(add_silhouettes_grid(plt, 0.3), paste0("endemic_shared_", file_stub(p)),
+           width = w, height = slide_h)
+  cat(sprintf("  %-16s endemic/shared figure (%d diet groups)\n", p, n_panels))
 }
 
 cat("\n=== STEP 8 COMPLETE ===\n")
