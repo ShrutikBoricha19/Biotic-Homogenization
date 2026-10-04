@@ -10,11 +10,15 @@
 #   Outputs/3_stages/faunmap_localities.csv   FAUNMAP site, stage, lat/long (Step 3)
 #   Outputs/3_stages/pbdb_occurrences.csv     PBDB occurrences with stage,
 #                                             lat/long and taxonomy (Step 3)
+#   Outputs/3_stages/site_index.csv           all sites per stage (for the
+#                                             site accounting only)
 #
 # Rules:
 #   - Sites: FAUNMAP SiteName, PBDB collection_name (one row per site per stage).
 #   - FAUNMAP fauna get the stage, SiteName and coordinates of their locality,
 #     matched on Machine Number + Analysis Unit (1234 and 1234.00 are equal).
+#     If a pair has locality rows in several stages, its fauna are placed in
+#     every one of those stages (as in the original script).
 #   - Each genus gets one order (the order most of its records use).
 #   - Only the orders in `orders_to_include` are kept.
 #   - "sp." / "cf." / "aff." / "indet." identifications are resolved to a
@@ -28,6 +32,8 @@
 #   all_records_final.xlsx / .csv   every retained record after resolution
 #   spcf_resolution_log.csv         what happened to each sp./cf. record
 #   genus_order_conflicts.csv       genera recorded under more than one order
+#   site_attrition.csv              every Step 3 site, and why it is or is not
+#                                   in the matrices
 #   summary.xlsx                    stage, order, resolution and site summaries
 #
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
@@ -54,6 +60,7 @@ work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation
 faunmap_fauna_file  <- "Order Filtered Fauna.csv"
 faunmap_sites_file  <- file.path("Outputs", "3_stages", "faunmap_localities.csv")
 pbdb_file           <- file.path("Outputs", "3_stages", "pbdb_occurrences.csv")
+site_index_file     <- file.path("Outputs", "3_stages", "site_index.csv")
 
 output_dir <- file.path(work_dir, "Outputs", "6_matrices")
 
@@ -161,7 +168,7 @@ save_both <- function(df, name) {
 
 cat("=== 1. READING FILES ===\n")
 
-needed <- c(faunmap_fauna_file, faunmap_sites_file, pbdb_file)
+needed <- c(faunmap_fauna_file, faunmap_sites_file, pbdb_file, site_index_file)
 found <- file.exists(file.path(work_dir, needed))
 for (i in seq_along(needed)) {
   cat(if (found[i]) "  [found]   " else "  [MISSING] ", needed[i], "\n", sep = "")
@@ -175,6 +182,7 @@ if (!all(found)) stop("Some input files were not found (run Step 3 first for the
 faunmap_fauna_raw <- read_input(faunmap_fauna_file)
 faunmap_sites_raw <- read_input(faunmap_sites_file)
 pbdb_raw          <- read_input(pbdb_file)
+site_index_raw    <- read_input(site_index_file)
 
 # =============================================================================
 # 2. FAUNMAP: LINK FAUNA TO SITES, STAGES AND COORDINATES
@@ -210,15 +218,16 @@ site_lookup <- faunmap_sites_raw %>%
 join_by_period <- !is.na(f_period)
 key_cols <- if (join_by_period) c("FAUNMAP_Period", ".mk", ".ak") else c(".mk", ".ak")
 
+# A pair can have several locality rows (e.g. in both the Blancan and the
+# Irvingtonian file, or with different ages). Every row is kept, so the
+# fauna appear in every stage their locality appears in.
+site_lookup <- distinct(site_lookup)
 pair_stages <- site_lookup %>%
   group_by(across(all_of(key_cols))) %>%
   summarise(n_stages = n_distinct(Stage_Number), .groups = "drop")
 n_multi <- sum(pair_stages$n_stages > 1)
-if (n_multi > 0) {
-  cat(sprintf("  NOTE: %d Machine Number + Analysis Unit pairs have localities in more than one\n", n_multi),
-      "        stage; their fauna use the first locality row (as in Step 3).\n", sep = "")
-}
-site_lookup <- distinct(site_lookup, across(all_of(key_cols)), .keep_all = TRUE)
+cat(sprintf("  Machine Number + Analysis Unit pairs whose localities fall in more than one\n"),
+    sprintf("  stage: %d (their fauna are placed in each of those stages)\n", n_multi), sep = "")
 
 faunmap_records <- faunmap_fauna_raw %>%
   mutate(
@@ -232,14 +241,19 @@ faunmap_records <- faunmap_fauna_raw %>%
 
 n_in <- nrow(faunmap_records)
 faunmap_records <- faunmap_records %>%
-  filter(!is.na(.mk), !is.na(.ak), !is.na(Genus))
+  filter(!is.na(.mk), !is.na(.ak))
 faunmap_linked <- faunmap_records %>%
-  inner_join(site_lookup, by = key_cols, suffix = c(".fauna", "")) %>%
+  inner_join(site_lookup, by = key_cols, suffix = c(".fauna", ""),
+             relationship = "many-to-many") %>%
   transmute(Database = "FAUNMAP", SiteName, Latitude, Longitude,
             Stage_Number, Genus, Species, Order)
 
-cat(sprintf("  %d fauna records | %d with pair and genus | %d linked to a staged locality\n",
-            n_in, nrow(faunmap_records), nrow(faunmap_linked)))
+n_unlinked <- nrow(anti_join(faunmap_records, site_lookup, by = key_cols))
+cat(sprintf("  %d fauna records | %d with Machine Number + Analysis Unit\n",
+            n_in, nrow(faunmap_records)))
+cat(sprintf("  %d records match no staged locality (pair not in the locality files,\n", n_unlinked),
+    "   or its locality has no stage 1-5)\n", sep = "")
+cat(sprintf("  %d record-stage rows after linking\n", nrow(faunmap_linked)))
 
 # =============================================================================
 # 3. PBDB: OCCURRENCES ALREADY CARRY STAGE AND COORDINATES
@@ -274,10 +288,11 @@ pbdb_records <- pbdb_raw %>%
             Longitude = suppressWarnings(as.numeric(Longitude)),
             Stage_Number = as.integer(Stage_Number),
             Genus, Species, Order) %>%
-  filter(!is.na(SiteName), !is.na(Genus), Stage_Number %in% 1:5)
+  filter(!is.na(SiteName), Stage_Number %in% 1:5)
 
-cat(sprintf("  %d occurrences | %d with a collection, genus and stage\n",
-            nrow(pbdb_raw), nrow(pbdb_records)))
+cat(sprintf("  %d occurrences | %d with a collection and stage | %d of these lack a genus\n",
+            nrow(pbdb_raw), nrow(pbdb_records), sum(is.na(pbdb_records$Genus))))
+cat("  (PBDB leaves genus empty when a fossil is identified only to family or higher)\n")
 
 # =============================================================================
 # 4. COMBINE AND KEEP THE SELECTED ORDERS
@@ -286,6 +301,15 @@ cat(sprintf("  %d occurrences | %d with a collection, genus and stage\n",
 cat("\n=== 4. COMBINING AND FILTERING ORDERS ===\n")
 
 all_raw <- bind_rows(faunmap_linked, pbdb_records)
+
+# Site sets after each step, for the site accounting in section 7.
+site_set <- function(df) distinct(df, Stage_Number, Database, SiteName)
+sites_linked <- site_set(all_raw)
+
+n_no_genus <- sum(is.na(all_raw$Genus))
+all_raw <- filter(all_raw, !is.na(Genus))
+sites_genus <- site_set(all_raw)
+cat(sprintf("  Records without a genus removed: %d\n", n_no_genus))
 
 # One order per genus. A genus recorded under different orders (e.g. FAUNMAP
 # and PBDB disagree, or a typo) is given the order most of its records use;
@@ -323,6 +347,8 @@ all_raw <- all_raw %>%
            if_else(Order == "Insectivora", merge_insectivora_into, Order) else Order,
          GenusSpecies = paste(Genus, Species),
          is_spcf_flag = is_spcf(Species))
+
+sites_orders <- site_set(all_raw)
 
 cat(sprintf("\n  Records in the selected orders: %d (FAUNMAP %d, PBDB %d)\n",
             nrow(all_raw), sum(all_raw$Database == "FAUNMAP"), sum(all_raw$Database == "PBDB")))
@@ -487,10 +513,75 @@ for (s in 1:5) {
 }
 
 # =============================================================================
-# 7. SUMMARIES
+# 7. SITE ACCOUNTING: WHERE DID EACH STEP 3 SITE GO?
+#
+# Starts from every named site in each stage in Step 3 (the sites on the
+# Step 4 maps) and records the first step at which a site dropped out.
+# No minimum-species filter is involved; sites are lost only when they have
+# no usable records left.
 # =============================================================================
 
-cat("\n=== 7. SUMMARIES ===\n")
+cat("\n=== 7. SITE ACCOUNTING ===\n")
+
+index_sites <- site_index_raw %>%
+  transmute(Stage_Number = as.integer(Stage_Number), Database,
+            SiteName = clean_text(SiteName)) %>%
+  filter(!is.na(SiteName), Stage_Number %in% 1:5) %>%
+  distinct()
+
+in_set <- function(df, set) {
+  paste(df$Stage_Number, df$Database, df$SiteName) %in%
+    paste(set$Stage_Number, set$Database, set$SiteName)
+}
+
+reasons_order <- c(
+  "Retained in matrix",
+  "No fauna records linked to this site",
+  "Its fauna records have no genus",
+  "No records in the selected orders",
+  "Only sp./cf. records that could not be resolved"
+)
+
+site_attrition <- index_sites %>%
+  mutate(
+    Status = case_when(
+      in_set(., site_set(all_final)) ~ reasons_order[1],
+      !in_set(., sites_linked)       ~ reasons_order[2],
+      !in_set(., sites_genus)        ~ reasons_order[3],
+      !in_set(., sites_orders)       ~ reasons_order[4],
+      TRUE                           ~ reasons_order[5]
+    ),
+    Stage = stage_names[Stage_Number]
+  ) %>%
+  arrange(Stage_Number, Database, Status, SiteName) %>%
+  select(Stage_Number, Stage, Database, SiteName, Status)
+
+attrition_summary <- site_attrition %>%
+  count(Stage_Number, Stage, Database, Status) %>%
+  mutate(Status = factor(Status, levels = reasons_order)) %>%
+  tidyr::pivot_wider(names_from = Status, values_from = n, values_fill = 0,
+                     names_sort = TRUE) %>%
+  mutate(Sites_in_Step3 = rowSums(across(any_of(reasons_order)))) %>%
+  relocate(Sites_in_Step3, .after = Database) %>%
+  arrange(Stage_Number, Database)
+
+# Sites in the matrices that are not in Step 3's index (should be none).
+extra_sites <- site_set(all_final) %>%
+  filter(!in_set(., index_sites))
+
+print(as.data.frame(attrition_summary), row.names = FALSE)
+if (nrow(extra_sites) > 0) {
+  cat(sprintf("  NOTE: %d site-stage combinations are in the matrices but not in Step 3's index.\n",
+              nrow(extra_sites)))
+}
+write.csv(site_attrition, file.path(output_dir, "site_attrition.csv"), row.names = FALSE, na = "")
+cat("  Every site and its status: site_attrition.csv\n")
+
+# =============================================================================
+# 8. SUMMARIES
+# =============================================================================
+
+cat("\n=== 8. SUMMARIES ===\n")
 
 stage_summary <- all_final %>%
   group_by(Stage_Number, Stage) %>%
@@ -513,6 +604,7 @@ site_richness <- all_final %>%
 write_xlsx(list(StageSummary = stage_summary,
                 OrderSummary = order_summary,
                 Resolution = resolution_counts,
+                SiteAccounting = attrition_summary,
                 SiteRichness = site_richness),
            file.path(output_dir, "summary.xlsx"))
 
