@@ -259,6 +259,17 @@ link_fauna <- function(fauna, cols, loc_lookup, period) {
       .ak = clean_text(.data[[cols[["analysis"]]]])
     )
 
+  # If the fauna file already has a column this step adds (e.g. Latitude),
+  # keep it under a new name such as "Latitude_original".
+  added <- c(names(reference_lookup), names(loc_lookup), "FAUNMAP_Period",
+             "SiteName_Linked", "Match_Source", "Has_Coordinates")
+  clash <- setdiff(intersect(names(fauna), added), c(".mk", ".ak"))
+  if (length(clash) > 0) {
+    cat("  ", period, ": renamed existing column(s) ",
+        paste(clash, collapse = ", "), " -> *_original\n", sep = "")
+    names(keyed)[names(keyed) %in% clash] <- paste0(names(keyed)[names(keyed) %in% clash], "_original")
+  }
+
   linked <- keyed %>%
     left_join(reference_lookup, by = c(".mk", ".ak")) %>%
     left_join(loc_lookup, by = c(".mk", ".ak")) %>%
