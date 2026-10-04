@@ -1,35 +1,39 @@
 # =============================================================================
-# STEP 5: MAP ALL SITES ON THE PHYSIOGRAPHIC REGIONS OF NORTH AMERICA
+# STEP 5: PHYSIOGRAPHIC MAPS AND SITE-PHYSIOGRAPHY DATABASE (USA + CANADA)
 #
-# Same five stage maps as Step 4 (one point per site, FAUNMAP and PBDB not
-# distinguished), drawn on the physiographic regions of:
-#
-#   USA     Fenneman & Johnson (1946), "Physiographic divisions of the
-#           conterminous U.S." (USGS physio_shp) - your local copy.
-#           Covers the conterminous US only (no Alaska / Hawaii).
+# Physiographic layers:
+#   USA     Fenneman & Johnson (1946), USGS physio_shp - your local file.
+#           Levels: DIVISION (8) > PROVINCE (25) > SECTION (86).
+#           Conterminous US only (no Alaska / Hawaii).
 #   Canada  Natural Resources Canada, "Physiographic Regions of Canada"
-#           (open.canada.ca record a3dfbaf4-1b20-4061-aa0a-e7a79953f52d).
-#           Downloaded automatically from NRCan's ArcGIS service.
-#   Mexico  CONABIO, "Provincias Fisiograficas de Mexico", 1:4,000,000
-#           (Cervantes-Zamora et al. 1990, after INEGI).
-#           Downloaded automatically from CONABIO.
+#           (open.canada.ca record a3dfbaf4-1b20-4061-aa0a-e7a79953f52d),
+#           downloaded once from NRCan's ArcGIS service and cached.
+#           Levels: Region (7) > Subregion (21).
+#   Mexico is not included (drawn plain grey).
 #
-# Downloads are cached in Outputs/maps/basemap/ and reused. If a download
-# fails (no internet, site down), download the data by hand and set
-# canada_path / mexico_path below. Any country whose layer is missing is
-# drawn plain grey; the maps are still produced.
+# The two countries' levels are paired like this:
+#   "division" level  = US DIVISION  + Canada Region
+#   "province" level  = US PROVINCE  + Canada Subregion
 #
-# Reading the maps:
-#   - Each physiographic unit has a NUMBER on the map, listed in the key.
-#   - Fill colours only separate neighbouring units (touching units never
-#     share a colour); they do not identify units by themselves.
-#   - Grey land = no physiographic layer (e.g. Alaska, Hawaii).
+# Outputs (Outputs/maps/physiographic/):
+#   divisions/  5 stage maps at division level
+#   provinces/  5 stage maps at province level
+#   site_physio_database.csv / .rds
+#       One row per site and stage, with its coordinates and its US division,
+#       province and section, or Canadian region and subregion.
+#       Key columns: Site_Key + Stage_Number (the same keys as Step 3).
+#   occurrences_physio.csv / .rds
+#       Every FAUNMAP fauna record and PBDB occurrence from Step 3 with the
+#       physiographic units of its site attached - ready for analysis.
+#   physio_units_key_divisions.csv / physio_units_key_provinces.csv
+#       The numbered keys used on the maps.
 #
-# Also saved: the physiographic unit of every site (site_physio_units.csv).
+# Reading the maps: each unit carries a NUMBER, listed in the key. Fill
+# colours only separate neighbouring units (touching units never share a
+# colour). Grey land = no physiographic layer (Alaska, Hawaii, Mexico).
 #
-# Input:  Outputs/3_stages/site_index.csv  (from Step 3)
-# Output: Outputs/maps/physiographic/
-#
+# Input:  Outputs/3_stages/ (site_index.csv, faunmap_fauna.csv,
+#         pbdb_occurrences.csv) from Step 3
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
 # Needs: dplyr, ggplot2, sf, maps (ggrepel optional, for tidier labels).
 # =============================================================================
@@ -52,36 +56,29 @@ sf_use_s2(FALSE)   # planar geometry; all overlay work is done in metres
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-site_index_file <- file.path("Outputs", "3_stages", "site_index.csv")
-output_dir      <- file.path(work_dir, "Outputs", "maps", "physiographic")
-basemap_dir     <- file.path(work_dir, "Outputs", "maps", "basemap")   # download cache
+stages_dir  <- file.path(work_dir, "Outputs", "3_stages")
+output_dir  <- file.path(work_dir, "Outputs", "maps", "physiographic")
+basemap_dir <- file.path(work_dir, "Outputs", "maps", "basemap")   # download cache
 
 # --- USA (local shapefile) ---------------------------------------------------
-# A folder containing physio.shp, or the .shp file itself. Use forward
-# slashes "/" in Windows paths.
-us_path  <- "C:/Users/shrut/Downloads/physio_shp"
-us_field <- "DIVISION"      # level to map: "DIVISION" (8), "PROVINCE" (25) or "SECTION" (86)
+us_path <- "C:/Users/shrut/Downloads/physio_shp/.shp"
+us_fields <- c(division = "DIVISION", province = "PROVINCE", section = "SECTION")
 
-# --- Canada -------------------------------------------------------------------
-# NULL = download from NRCan. Or a local file / folder / .gdb.
-canada_path        <- NULL
-canada_local_layer <- NULL  # layer name inside a local .gdb (NULL = choose automatically)
-canada_service     <- "https://maps-cartes.services.geo.ca/server_serveur/rest/services/NRCan/phys_reg_en/MapServer"
-canada_layer       <- 0     # 0 = Regions (7), 1 = Subregions (21), 2 = Divisions
-canada_field       <- NULL  # NULL = detect the name column automatically
+# --- Canada (NRCan, downloaded) -------------------------------------------------
+canada_service <- "https://maps-cartes.services.geo.ca/server_serveur/rest/services/NRCan/phys_reg_en/MapServer"
+canada_layers  <- c(division = 0, province = 1)      # 0 = Regions, 1 = Subregions
+canada_fields  <- c(division = NA, province = NA)    # NA = detect the name column
+# If the download does not work, download the dataset from open.canada.ca and
+# give the files here, e.g. c(division = "C:/.../regions.shp", province = "C:/.../subregions.shp")
+canada_local   <- c(division = NA, province = NA)
 
-# --- Mexico -------------------------------------------------------------------
-# NULL = download from CONABIO. Or a local folder / .shp.
-mexico_path  <- NULL
-mexico_url   <- "http://www.conabio.gob.mx/informacion/gis/maps/geo/rfisio4mgw.zip"
-mexico_field <- NULL        # NULL = detect the province name column automatically
-
-# --- Map appearance -------------------------------------------------------------
-map_crs   <- "+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
-map_lon   <- c(-170, -50)   # extent drawn (degrees)
-map_lat   <- c(14, 84)
-simplify_m <- 1000          # smooth region outlines to ~1 km (0 = no smoothing)
-show_state_lines <- TRUE    # state / province lines from Step 4's cached file
+# --- Maps -------------------------------------------------------------------------
+map_levels <- c("division", "province")   # one set of 5 maps per level
+map_crs    <- "+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
+map_lon    <- c(-170, -50)                # extent drawn (degrees)
+map_lat    <- c(14, 84)
+simplify_m <- 1000                        # smooth outlines for drawing (~1 km)
+show_state_lines <- TRUE                  # uses the file cached by Step 4
 
 point_fill   <- "#B2182B"
 point_size   <- 2
@@ -89,8 +86,8 @@ region_tints <- c("#E9DDB9", "#CFE3C6", "#C8DCEC", "#DCD2EA", "#D2E9E2", "#F1E3C
 no_data_fill <- "grey88"
 sea_fill     <- "#F3F7FA"
 
-snap_km <- 10               # sites just off a unit's edge (coast) are assigned to the
-                            # nearest unit within this distance
+snap_km <- 10    # a site just outside every unit (e.g. on the coast) is linked to
+                 # the nearest unit within this distance
 
 stage_titles <- c(
   "Bin 1 - Zanclean (4.700-3.600 Ma)",
@@ -108,36 +105,34 @@ dir.create(basemap_dir, recursive = TRUE, showWarnings = FALSE)
 # HELPERS
 # =============================================================================
 
-# Read a spatial file from a path that may be a .shp, a folder holding
-# shapefiles, a .gdb, or a .geojson. `hint` picks among several files/layers.
-read_spatial <- function(path, hint = NULL, layer = NULL) {
-  if (!file.exists(path)) stop("Not found: ", path)
-
-  if (dir.exists(path) && !grepl("\\.gdb/?$", path, ignore.case = TRUE)) {
-    shp <- list.files(path, pattern = "\\.shp$", recursive = TRUE,
-                      full.names = TRUE, ignore.case = TRUE)
-    if (length(shp) == 0) stop("No .shp file found in folder: ", path)
-    if (length(shp) > 1) {
-      pick <- if (!is.null(hint)) grep(hint, basename(shp), ignore.case = TRUE) else integer(0)
-      cat("    Several shapefiles found:", paste(basename(shp), collapse = ", "), "\n")
-      shp <- shp[if (length(pick)) pick[1] else 1]
-    }
-    cat("    Reading", shp, "\n")
-    return(st_read(shp, quiet = TRUE))
+# Read the US shapefile. A file literally named ".shp" opens on some systems
+# but not others, so if reading fails the files are copied to a temporary
+# folder under the name "physio.*" and read from there.
+read_us <- function(path) {
+  if (dir.exists(path)) {
+    shp <- list.files(path, pattern = "\\.shp$", full.names = TRUE,
+                      all.files = TRUE, ignore.case = TRUE)
+    if (length(shp) == 0) stop("No .shp file in folder: ", path)
+    path <- shp[1]
   }
-
-  if (grepl("\\.gdb/?$", path, ignore.case = TRUE) && is.null(layer)) {
-    lyr <- st_layers(path)$name
-    cat("    Layers in geodatabase:", paste(lyr, collapse = ", "), "\n")
-    pick <- if (!is.null(hint)) grep(hint, lyr, ignore.case = TRUE) else integer(0)
-    layer <- lyr[if (length(pick)) pick[1] else 1]
+  if (!file.exists(path)) {
+    stop("File not found: ", path)
   }
+  x <- tryCatch(st_read(path, quiet = TRUE), error = function(e) NULL)
+  if (!is.null(x)) return(x)
 
-  cat("    Reading", path, if (!is.null(layer)) paste0("(layer: ", layer, ")"), "\n")
-  if (is.null(layer)) st_read(path, quiet = TRUE) else st_read(path, layer = layer, quiet = TRUE)
+  stem <- sub("\\.shp$", "", path, ignore.case = TRUE)
+  tmp <- file.path(tempdir(), "physio_copy")
+  dir.create(tmp, showWarnings = FALSE)
+  for (ext in c("shp", "shx", "dbf", "prj", "cpg")) {
+    src <- paste0(stem, ".", ext)
+    if (file.exists(src)) file.copy(src, file.path(tmp, paste0("physio.", ext)), overwrite = TRUE)
+  }
+  cat("    (read via a temporary copy named physio.shp)\n")
+  st_read(file.path(tmp, "physio.shp"), quiet = TRUE)
 }
 
-# Repair text read with the wrong encoding (common in Spanish shapefiles).
+# Repair text read with the wrong encoding.
 fix_text <- function(x) {
   x <- as.character(x)
   bad <- !is.na(x) & !validUTF8(x)
@@ -148,60 +143,48 @@ fix_text <- function(x) {
 
 # "INTERIOR PLAINS" -> "Interior Plains"; other names are left as written.
 tidy_name <- function(x) {
-  x <- gsub("\\s+", " ", trimws(fix_text(as.character(x))))
+  x <- gsub("\\s+", " ", trimws(fix_text(x)))
   upper <- !is.na(x) & x == toupper(x) & grepl("[A-Z]", x)
   if (any(upper)) x[upper] <- tools::toTitleCase(tolower(x[upper]))
-  x[x == ""] <- NA
+  x[!is.na(x) & x == ""] <- NA
   x
 }
 
-# Print every attribute column with its number of distinct values and an
-# example, so the right name column can be chosen if detection is wrong.
+# Print each attribute column with its number of distinct values and an example.
 describe_fields <- function(df) {
   att <- st_drop_geometry(df)
   for (col in names(att)) {
     v <- att[[col]]
-    ex <- v[!is.na(v)][1]
     cat(sprintf("      %-15s %-10s %4d distinct   e.g. %s\n", col, class(v)[1],
-                n_distinct(v, na.rm = TRUE), substr(fix_text(as.character(ex)), 1, 40)))
+                n_distinct(v, na.rm = TRUE),
+                substr(fix_text(as.character(v[!is.na(v)][1])), 1, 40)))
   }
 }
 
-pick_field <- function(df, preferred, override, label) {
+find_field <- function(df, preferred, label) {
   cols <- names(st_drop_geometry(df))
-  if (!is.null(override)) {
-    hit <- cols[toupper(cols) == toupper(override)]
-    if (length(hit) == 0) {
-      stop(label, ": column '", override, "' not found. Columns: ", paste(cols, collapse = ", "))
-    }
-    return(hit[1])
-  }
-  for (p in preferred) {
+  for (p in preferred[!is.na(preferred)]) {
     hit <- cols[toupper(cols) == toupper(p)]
     if (length(hit)) return(hit[1])
   }
-  # Fallback: first text column that looks like a set of names.
   att <- st_drop_geometry(df)
-  for (col in cols) {
+  for (col in cols) {                      # fallback: first column of names
     v <- att[[col]]
-    if (is.character(v) && n_distinct(v, na.rm = TRUE) >= 2 &&
-        n_distinct(v, na.rm = TRUE) <= 300) return(col)
+    if (is.character(v) && n_distinct(v, na.rm = TRUE) >= 2) return(col)
   }
-  stop(label, ": could not find a name column. Set it in SETTINGS. Columns: ",
-       paste(cols, collapse = ", "))
+  stop(label, ": no name column found. Columns: ", paste(cols, collapse = ", "))
 }
 
 # Download one layer of an ArcGIS REST MapServer as GeoJSON (with paging).
 arcgis_download <- function(service, layer, dest) {
   base <- paste0(service, "/", layer, "/query?where=1%3D1&outFields=*",
                  "&returnGeometry=true&outSR=4326",
-                 "&maxAllowableOffset=0.005&geometryPrecision=5&f=geojson")
+                 "&maxAllowableOffset=0.002&geometryPrecision=5&f=geojson")
   fetch <- function(url) {
     tmp <- tempfile(fileext = ".geojson")
     suppressWarnings(download.file(url, tmp, mode = "wb", quiet = TRUE))
     st_read(tmp, quiet = TRUE)
   }
-
   pages <- list()
   offset <- 0
   repeat {
@@ -213,14 +196,13 @@ arcgis_download <- function(service, layer, dest) {
     if (nrow(page) < 1000) break
     offset <- offset + 1000
   }
-  if (length(pages) == 0) stop("The service returned no features.")
-
+  if (length(pages) == 0) stop("the service returned no features")
   out <- do.call(rbind, pages)
   st_write(out, dest, quiet = TRUE, delete_dsn = TRUE)
   out
 }
 
-# Keep only polygon parts, as MULTIPOLYGON (repairs can leave stray lines).
+# Keep only polygon parts, as MULTIPOLYGON.
 polygons_only <- function(x) {
   if (any(st_geometry_type(x) == "GEOMETRYCOLLECTION")) {
     x <- st_collection_extract(x, "POLYGON", warn = FALSE)
@@ -229,7 +211,7 @@ polygons_only <- function(x) {
   st_cast(x, "MULTIPOLYGON", warn = FALSE)
 }
 
-# Bring a layer into the map projection with one row per named unit.
+# One row per named unit, in the map projection (full detail, not simplified).
 standardise <- function(layer, field, country) {
   layer %>%
     st_make_valid() %>%
@@ -238,268 +220,242 @@ standardise <- function(layer, field, country) {
     filter(!is.na(Unit)) %>%
     polygons_only() %>%
     group_by(Country, Unit) %>%
-    summarise(.groups = "drop") %>%          # dissolve pieces of each unit
+    summarise(.groups = "drop") %>%
     st_make_valid() %>%
     polygons_only()
 }
 
+# Link each point to the unit it falls in (or the nearest within snap_km).
+assign_units <- function(points, polys) {
+  hit <- st_intersects(points, polys)
+  idx <- vapply(hit, function(h) if (length(h)) h[1] else NA_integer_, integer(1))
+  how <- ifelse(is.na(idx), "Outside all units", "Inside")
+  out <- which(is.na(idx))
+  if (length(out) > 0 && nrow(polys) > 0) {
+    near <- st_nearest_feature(points[out, ], polys)
+    d_km <- as.numeric(st_distance(points[out, ], polys[near, ], by_element = TRUE)) / 1000
+    ok <- d_km <= snap_km
+    idx[out[ok]] <- near[ok]
+    how[out[ok]] <- sprintf("Nearest unit (%.1f km)", d_km[ok])
+  }
+  data.frame(Country = polys$Country[idx], Unit = polys$Unit[idx], How = how,
+             stringsAsFactors = FALSE)
+}
+
+read_text_csv <- function(path) {
+  read.csv(path, check.names = FALSE, stringsAsFactors = FALSE,
+           colClasses = "character", na.strings = c("", "NA"))
+}
+
 # =============================================================================
-# 1. SITES: ONE POINT PER SITE PER STAGE (same rule as Step 4)
+# 1. LOAD THE US PHYSIOGRAPHIC SHAPEFILE
 # =============================================================================
 
-cat("=== 1. READING SITES ===\n")
+cat("=== 1. USA: FENNEMAN & JOHNSON (1946) ===\n")
+cat("  Reading", us_path, "\n")
+us_raw <- read_us(us_path)
 
-path <- file.path(work_dir, site_index_file)
-if (!file.exists(path)) stop("File not found:\n  ", path, "\nRun Step 3 first.")
+if (is.na(st_crs(us_raw))) {
+  # physio.shp is often distributed without a .prj file. Its documented
+  # projection is Albers Equal Area (29.5, 45.5, origin 23N 96W), NAD27.
+  bb <- st_bbox(us_raw)
+  if (all(abs(bb[c("xmin", "xmax")]) <= 180) && all(abs(bb[c("ymin", "ymax")]) <= 90)) {
+    st_crs(us_raw) <- 4269
+    cat("  No .prj file: coordinates are degrees -> NAD83 geographic assumed\n")
+  } else {
+    st_crs(us_raw) <- paste("+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96",
+                            "+x_0=0 +y_0=0 +datum=NAD27 +units=m +no_defs")
+    cat("  No .prj file: USGS Albers Equal Area (NAD27) assumed, as documented\n")
+  }
+}
 
-site_index <- read.csv(path, check.names = FALSE, stringsAsFactors = FALSE,
+bb <- st_bbox(st_transform(us_raw, 4326))
+cat(sprintf("  %d polygons | extent %.1f to %.1f lon, %.1f to %.1f lat\n",
+            nrow(us_raw), bb["xmin"], bb["xmax"], bb["ymin"], bb["ymax"]))
+if (bb["xmin"] < -130 || bb["xmax"] > -60 || bb["ymin"] < 20 || bb["ymax"] > 53) {
+  warning("The US layer is not where the conterminous US should be - check st_crs().")
+}
+describe_fields(us_raw)
+
+us_cols <- sapply(us_fields, function(f) {
+  hit <- names(us_raw)[toupper(names(us_raw)) == toupper(f)]
+  if (length(hit) == 0) stop("Column '", f, "' not found in the US shapefile.")
+  hit[1]
+})
+
+us_units <- lapply(names(us_cols), function(lv) standardise(us_raw, us_cols[[lv]], "USA"))
+names(us_units) <- names(us_cols)
+
+cat("\n  US physiographic divisions and their provinces:\n")
+us_tree <- st_drop_geometry(us_raw) %>%
+  transmute(Division = tidy_name(.data[[us_cols[["division"]]]]),
+            Province = tidy_name(.data[[us_cols[["province"]]]]),
+            Section  = tidy_name(.data[[us_cols[["section"]]]])) %>%
+  filter(!is.na(Division)) %>%
+  distinct() %>%
+  arrange(Division, Province, Section)
+for (d in unique(us_tree$Division)) {
+  cat("    ", d, "\n", sep = "")
+  for (p in unique(us_tree$Province[us_tree$Division == d & !is.na(us_tree$Province)])) {
+    cat("        - ", p, "\n", sep = "")
+  }
+}
+cat(sprintf("  Totals: %d divisions, %d provinces, %d sections\n",
+            n_distinct(us_tree$Division), n_distinct(us_tree$Province, na.rm = TRUE),
+            n_distinct(us_tree$Section, na.rm = TRUE)))
+
+# =============================================================================
+# 2. LOAD THE CANADIAN PHYSIOGRAPHIC LAYERS
+# =============================================================================
+
+cat("\n=== 2. CANADA: NRCan PHYSIOGRAPHIC REGIONS ===\n")
+
+canada_preferred <- list(
+  division = c("REGION_EN", "REGION", "REGION_NAME", "ENGLISH_NAME", "NAME_EN", "NAME_E", "NAME"),
+  province = c("SUBREGION_EN", "SUBREGION", "SUB_REGION", "SUBREGION_NAME",
+               "ENGLISH_NAME", "NAME_EN", "NAME_E", "NAME")
+)
+
+ca_units <- list()
+for (lv in names(canada_layers)) {
+  label <- c(division = "Regions", province = "Subregions")[[lv]]
+  cat("  ", label, "\n", sep = "")
+  layer <- tryCatch({
+    if (!is.na(canada_local[[lv]])) {
+      cat("    Reading", canada_local[[lv]], "\n")
+      st_read(canada_local[[lv]], quiet = TRUE)
+    } else {
+      cache <- file.path(basemap_dir, paste0("canada_physio_layer", canada_layers[[lv]], ".geojson"))
+      if (!file.exists(cache)) {
+        cat("    Downloading from NRCan (one time)...\n")
+        arcgis_download(canada_service, canada_layers[[lv]], cache)
+      }
+      cat("    Reading", cache, "\n")
+      st_read(cache, quiet = TRUE)
+    }
+  }, error = function(e) {
+    cat("    NOT LOADED:", conditionMessage(e), "\n",
+        "   Download 'Physiographic Regions of Canada' from open.canada.ca and set canada_local.\n")
+    NULL
+  })
+  if (is.null(layer)) next
+
+  describe_fields(layer)
+  f <- find_field(layer, c(canada_fields[[lv]], canada_preferred[[lv]]), paste("Canada", label))
+  ca_units[[lv]] <- standardise(layer, f, "Canada")
+  cat(sprintf("    Using '%s': %d units\n", f, nrow(ca_units[[lv]])))
+}
+
+# Combined layers per level (full detail, used for linking sites).
+physio_levels <- list(
+  division = rbind(us_units$division, ca_units$division),
+  province = rbind(us_units$province, ca_units$province),
+  section  = us_units$section                       # US only
+)
+
+# =============================================================================
+# 3. SITES AND THEIR PHYSIOGRAPHIC UNITS (THE DATABASE)
+#
+# One row per site and stage, keyed by Site_Key (as in Step 3):
+#   FAUNMAP site = period + Machine Number + Analysis Unit
+#   PBDB site    = collection_name
+# =============================================================================
+
+cat("\n=== 3. LINKING SITES TO PHYSIOGRAPHIC UNITS ===\n")
+
+index_path <- file.path(stages_dir, "site_index.csv")
+if (!file.exists(index_path)) stop("File not found:\n  ", index_path, "\nRun Step 3 first.")
+
+site_index <- read.csv(index_path, check.names = FALSE, stringsAsFactors = FALSE,
                        na.strings = c("", "NA"))
 
 sites <- site_index %>%
-  mutate(
-    Latitude = suppressWarnings(as.numeric(Latitude)),
-    Longitude = suppressWarnings(as.numeric(Longitude)),
-    SiteName = trimws(SiteName),
-    Site = if_else(is.na(SiteName) | SiteName == "", Site_Key, SiteName),
-    Has_Coordinates = !is.na(Latitude) & !is.na(Longitude)
-  ) %>%
-  arrange(Stage_Number, Database, Site, desc(Has_Coordinates)) %>%
-  group_by(Stage_Number, Database, Site) %>%
-  summarise(Latitude = first(Latitude), Longitude = first(Longitude),
-            Has_Coordinates = first(Has_Coordinates), .groups = "drop") %>%
-  mutate(Stage = stage_names[Stage_Number])
-
-cat(sprintf("  %d site-stage points, %d without coordinates (not mappable)\n",
-            nrow(sites), sum(!sites$Has_Coordinates)))
+  mutate(Latitude = suppressWarnings(as.numeric(Latitude)),
+         Longitude = suppressWarnings(as.numeric(Longitude)),
+         Has_Coordinates = !is.na(Latitude) & !is.na(Longitude)) %>%
+  arrange(Stage_Number, Site_Key, desc(Has_Coordinates)) %>%
+  distinct(Stage_Number, Site_Key, .keep_all = TRUE) %>%
+  select(Stage_Number, Stage, Database, Dataset, SiteName, Site_Key,
+         Latitude, Longitude, Has_Coordinates)
 
 sites_sf <- sites %>%
   filter(Has_Coordinates) %>%
   st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE) %>%
   st_transform(map_crs)
 
-# =============================================================================
-# 2. PHYSIOGRAPHIC LAYERS
-# =============================================================================
+div  <- assign_units(sites_sf, physio_levels$division)
+prov <- assign_units(sites_sf, physio_levels$province)
+sect <- assign_units(sites_sf, physio_levels$section)
 
-cat("\n=== 2. LOADING PHYSIOGRAPHIC LAYERS ===\n")
+linked <- st_drop_geometry(sites_sf) %>%
+  mutate(
+    Physio_Country  = coalesce(prov$Country, div$Country),
+    US_Division     = if_else(div$Country %in% "USA", div$Unit, NA_character_),
+    US_Province     = if_else(prov$Country %in% "USA", prov$Unit, NA_character_),
+    US_Section      = sect$Unit,
+    CA_Region       = if_else(div$Country %in% "Canada", div$Unit, NA_character_),
+    CA_Subregion    = if_else(prov$Country %in% "Canada", prov$Unit, NA_character_),
+    # Harmonised columns: US division / Canadian region, and
+    # US province / Canadian subregion.
+    Physio_Division = div$Unit,
+    Physio_Province = prov$Unit,
+    Physio_Match    = prov$How
+  )
 
-layers <- list()
+site_physio_database <- sites %>%
+  left_join(select(linked, Stage_Number, Site_Key, Physio_Country:Physio_Match),
+            by = c("Stage_Number", "Site_Key")) %>%
+  mutate(Physio_Match = if_else(Has_Coordinates, Physio_Match, "No coordinates")) %>%
+  arrange(Stage_Number, Database, SiteName, Site_Key)
 
-# ---- USA -----------------------------------------------------------------------
-cat("  USA (Fenneman & Johnson 1946)\n")
-us <- tryCatch(read_spatial(us_path, hint = "physio"), error = function(e) {
-  cat("    NOT LOADED:", conditionMessage(e), "\n"); NULL
-})
+stopifnot(nrow(site_physio_database) == nrow(sites))
 
-if (!is.null(us)) {
-  if (is.na(st_crs(us))) {
-    # physio.shp is often distributed without a .prj file. Its documented
-    # projection is Albers Equal Area (29.5, 45.5, origin 23N 96W), NAD27.
-    bb <- st_bbox(us)
-    if (all(abs(bb[c("xmin", "xmax")]) <= 180) && all(abs(bb[c("ymin", "ymax")]) <= 90)) {
-      st_crs(us) <- 4269
-      cat("    No .prj file: coordinates look like degrees -> NAD83 geographic assumed\n")
-    } else {
-      st_crs(us) <- paste("+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96",
-                          "+x_0=0 +y_0=0 +datum=NAD27 +units=m +no_defs")
-      cat("    No .prj file: USGS Albers Equal Area (NAD27) assumed, as documented\n")
-    }
-  }
-  # Sanity check: the conterminous US should land at about 125-66 W, 24-50 N.
-  bb <- st_bbox(st_transform(us, 4326))
-  cat(sprintf("    Extent: %.1f to %.1f lon, %.1f to %.1f lat\n",
-              bb["xmin"], bb["xmax"], bb["ymin"], bb["ymax"]))
-  if (bb["xmin"] < -130 || bb["xmax"] > -60 || bb["ymin"] < 20 || bb["ymax"] > 53) {
-    warning("The US layer is not where the conterminous US should be. ",
-            "Its coordinate system is probably wrong - check st_crs().")
-  }
-  describe_fields(us)
-  f <- pick_field(us, us_field, us_field, "USA")
-  layers$USA <- standardise(us, f, "USA")
-  cat(sprintf("    Using '%s': %d units\n", f, nrow(layers$USA)))
+match_summary <- count(site_physio_database, Physio_Country, Physio_Match)
+print(as.data.frame(match_summary), row.names = FALSE)
+cat("  (sites outside all units are in areas without a layer: Mexico, Alaska, offshore)\n")
+
+save_table <- function(df, name) {
+  write.csv(df, file.path(output_dir, paste0(name, ".csv")), row.names = FALSE, na = "")
+  saveRDS(df, file.path(output_dir, paste0(name, ".rds")))
+  cat(sprintf("  %-26s %7d rows -> %s.csv / .rds\n", name, nrow(df), file.path(output_dir, name)))
 }
 
-# ---- Canada --------------------------------------------------------------------
-cat("  Canada (NRCan Physiographic Regions)\n")
-canada <- tryCatch({
-  if (!is.null(canada_path)) {
-    read_spatial(canada_path, hint = c("region", "subregion", "division")[canada_layer + 1],
-                 layer = canada_local_layer)
-  } else {
-    cache <- file.path(basemap_dir, paste0("canada_physio_layer", canada_layer, ".geojson"))
-    if (!file.exists(cache)) {
-      cat("    Downloading from NRCan (one time)...\n")
-      arcgis_download(canada_service, canada_layer, cache)
-    }
-    cat("    Reading", cache, "\n")
-    st_read(cache, quiet = TRUE)
-  }
-}, error = function(e) {
-  cat("    NOT LOADED:", conditionMessage(e), "\n",
-      "   Download 'Physiographic Regions of Canada' from open.canada.ca and set canada_path.\n")
-  NULL
-})
+cat("\n  Saving the database:\n")
+save_table(site_physio_database, "site_physio_database")
 
-if (!is.null(canada)) {
-  describe_fields(canada)
-  f <- pick_field(canada,
-                  c("REGION_EN", "REGION", "SUBREGION_EN", "SUBREGION", "DIVISION_EN",
-                    "DIVISION", "NAME_EN", "ENGLISH_NAME", "NAME_E", "NAME"),
-                  canada_field, "Canada")
-  layers$Canada <- standardise(canada, f, "Canada")
-  cat(sprintf("    Using '%s': %d units\n", f, nrow(layers$Canada)))
-}
-
-# ---- Mexico --------------------------------------------------------------------
-cat("  Mexico (CONABIO Provincias Fisiograficas)\n")
-mexico <- tryCatch({
-  src <- mexico_path
-  if (is.null(src)) {
-    src <- file.path(basemap_dir, "mexico_rfisio4mgw")
-    if (!dir.exists(src) || length(list.files(src, pattern = "\\.shp$", recursive = TRUE)) == 0) {
-      cat("    Downloading from CONABIO (one time)...\n")
-      zip <- file.path(basemap_dir, basename(mexico_url))
-      old <- options(timeout = 600)
-      on.exit(options(old), add = TRUE)
-      ok <- tryCatch({
-        suppressWarnings(download.file(mexico_url, zip, mode = "wb", quiet = TRUE))
-        TRUE
-      }, error = function(e) FALSE)
-      if (!ok || !file.exists(zip) || file.size(zip) < 1000) {
-        if (file.exists(zip)) file.remove(zip)   # so the next run tries again
-        stop("download from CONABIO failed")
-      }
-      dir.create(src, showWarnings = FALSE)
-      unzip(zip, exdir = src)
-    }
-  }
-  read_spatial(src, hint = "fisio")
-}, error = function(e) {
-  cat("    NOT LOADED:", conditionMessage(e), "\n",
-      "   Download 'Provincias Fisiograficas de Mexico' (rfisio4mgw) from CONABIO and set mexico_path.\n")
-  NULL
-})
-
-if (!is.null(mexico)) {
-  if (is.na(st_crs(mexico))) {
-    st_crs(mexico) <- 4326
-    cat("    No .prj file: WGS84 geographic assumed\n")
-  }
-  describe_fields(mexico)
-  f <- pick_field(mexico,
-                  c("PROVINCIA", "PROVINCIAS", "NOM_PROV", "NOMPROV", "PROV_FIS",
-                    "PROVFIS", "NOMBRE", "NOM"),
-                  mexico_field, "Mexico")
-  layers$Mexico <- standardise(mexico, f, "Mexico")
-  cat(sprintf("    Using '%s': %d units\n", f, nrow(layers$Mexico)))
-}
-
-if (length(layers) == 0) stop("No physiographic layer could be loaded.")
-
-physio <- do.call(rbind, layers)
-if (simplify_m > 0) physio <- st_simplify(physio, dTolerance = simplify_m, preserveTopology = TRUE)
-
-# =============================================================================
-# 3. NUMBER THE UNITS AND CHOOSE FILL COLOURS
-#
-# Units with the same name in different countries (e.g. Interior Plains in
-# the US and Canada) share one number.
-# =============================================================================
-
-cat("\n=== 3. PREPARING THE KEY ===\n")
-
-country_order <- c("USA", "Canada", "Mexico")
-country_code  <- c(USA = "US", Canada = "CA", Mexico = "MX")
-
-key <- st_drop_geometry(physio) %>%
-  group_by(Unit) %>%
-  summarise(
-    first_country = min(match(Country, country_order)),
-    Countries = paste(country_code[country_order[sort(unique(match(Country, country_order)))]],
-                      collapse = ", "),
-    .groups = "drop"
+# Every fauna record / occurrence with the physiographic units of its site.
+fauna_path <- file.path(stages_dir, "faunmap_fauna.csv")
+pbdb_path  <- file.path(stages_dir, "pbdb_occurrences.csv")
+occurrences_physio <- NULL
+if (file.exists(fauna_path) && file.exists(pbdb_path)) {
+  occ <- bind_rows(
+    read_text_csv(fauna_path) %>% mutate(Database = "FAUNMAP"),
+    read_text_csv(pbdb_path) %>% mutate(Database = "PBDB")
   ) %>%
-  arrange(first_country, Unit) %>%
-  mutate(Number = row_number(),
-         Key_Label = sprintf("%2d  %s (%s)", Number, Unit, Countries)) %>%
-  select(Number, Unit, Countries, Key_Label)
+    mutate(Stage_Number = as.integer(Stage_Number))
 
-physio <- physio %>%
-  group_by(Unit) %>%
-  summarise(.groups = "drop") %>%            # merge same-named units across borders
-  polygons_only() %>%
-  left_join(key, by = "Unit")
+  physio_cols <- site_physio_database %>%
+    select(Stage_Number, Site_Key, Physio_Country:Physio_Match)
 
-# Map colouring: give touching units different tints (greedy, most
-# connected unit first). Units within 20 km count as touching so that small
-# gaps between the national datasets are ignored.
-touching <- st_is_within_distance(physio, physio, dist = 20000)
-tint <- integer(nrow(physio))
-for (i in order(lengths(touching), decreasing = TRUE)) {
-  used <- tint[setdiff(touching[[i]], i)]
-  tint[i] <- which(!seq_along(region_tints) %in% used)[1]
-  if (is.na(tint[i])) tint[i] <- 1L
-}
-physio$Tint <- factor(tint)
+  # Drop any same-named columns first so the join adds clean columns.
+  occurrences_physio <- occ %>%
+    select(-any_of(setdiff(names(physio_cols), c("Stage_Number", "Site_Key")))) %>%
+    left_join(physio_cols, by = c("Stage_Number", "Site_Key")) %>%
+    relocate(Database, Stage_Number, Site_Key, Physio_Country, Physio_Division,
+             Physio_Province, .before = 1)
 
-# Label position: a point inside the largest piece of each unit.
-label_pts <- physio %>%
-  select(Number) %>%
-  st_set_agr("constant") %>%
-  st_cast("POLYGON", warn = FALSE) %>%
-  mutate(area = as.numeric(st_area(.))) %>%
-  group_by(Number) %>%
-  slice_max(area, n = 1, with_ties = FALSE) %>%
-  ungroup() %>%
-  st_set_agr("constant") %>%
-  st_point_on_surface()
-label_xy <- cbind(st_drop_geometry(label_pts)["Number"], st_coordinates(label_pts))
-
-for (i in seq_len(nrow(key))) cat(" ", key$Key_Label[i], "\n")
-write.csv(select(key, Number, Unit, Countries),
-          file.path(output_dir, "physio_units_key.csv"), row.names = FALSE)
-
-# =============================================================================
-# 4. PHYSIOGRAPHIC UNIT OF EVERY SITE
-# =============================================================================
-
-cat("\n=== 4. ASSIGNING SITES TO PHYSIOGRAPHIC UNITS ===\n")
-
-inside <- st_intersects(sites_sf, physio)
-unit_idx <- vapply(inside, function(h) if (length(h)) h[1] else NA_integer_, integer(1))
-match_type <- ifelse(is.na(unit_idx), "None", "Inside")
-
-# Sites just outside every unit (usually on the coast): nearest unit within snap_km.
-out <- which(is.na(unit_idx))
-if (length(out) > 0) {
-  near <- st_nearest_feature(sites_sf[out, ], physio)
-  d_km <- as.numeric(st_distance(sites_sf[out, ], physio[near, ], by_element = TRUE)) / 1000
-  ok <- d_km <= snap_km
-  unit_idx[out[ok]] <- near[ok]
-  match_type[out[ok]] <- sprintf("Nearest (%.1f km)", d_km[ok])
+  stopifnot(nrow(occurrences_physio) == nrow(occ))
+  save_table(occurrences_physio, "occurrences_physio")
+} else {
+  cat("  NOTE: faunmap_fauna.csv / pbdb_occurrences.csv not found - occurrence table skipped.\n")
 }
 
-site_units <- sites_sf %>%
-  st_drop_geometry() %>%
-  mutate(Physio_Number = physio$Number[unit_idx],
-         Physio_Unit = physio$Unit[unit_idx],
-         Physio_Match = match_type) %>%
-  select(Stage_Number, Stage, Database, Site, Latitude, Longitude,
-         Physio_Number, Physio_Unit, Physio_Match)
-
-cat(sprintf("  %d inside a unit | %d assigned to the nearest unit (<= %g km) | %d outside all units\n",
-            sum(match_type == "Inside"), sum(grepl("^Nearest", match_type)),
-            snap_km, sum(match_type == "None")))
-if (any(match_type == "None")) {
-  cat("  (sites outside all units are usually in areas with no layer, e.g. Alaska,\n",
-      "   or in a country whose layer did not load)\n", sep = "")
+if (requireNamespace("writexl", quietly = TRUE)) {
+  writexl::write_xlsx(site_physio_database, file.path(output_dir, "site_physio_database.xlsx"))
 }
 
-write.csv(site_units, file.path(output_dir, "site_physio_units.csv"),
-          row.names = FALSE, na = "")
-
 # =============================================================================
-# 5. BASE LAYERS: COUNTRY OUTLINES AND STATE / PROVINCE LINES
+# 4. BASE LAYERS FOR THE MAPS
 # =============================================================================
 
 frame_ll <- st_as_sfc(st_bbox(c(xmin = map_lon[1], xmax = map_lon[2],
@@ -509,12 +465,8 @@ countries <- st_as_sf(maps::map("world", regions = c("Canada", "USA", "Mexico"),
                                 fill = TRUE, plot = FALSE))
 st_crs(countries) <- NA       # the maps package labels its lon/lat data with an old
 st_crs(countries) <- 4326     # ellipsoid; relabel it so it lines up with WGS84
-countries <- countries %>%
-  st_make_valid() %>%
-  st_set_agr("constant")
-countries <- suppressMessages(st_intersection(countries, frame_ll)) %>%
-  st_transform(map_crs)
-
+countries <- countries %>% st_make_valid() %>% st_set_agr("constant")
+countries <- suppressMessages(st_intersection(countries, frame_ll)) %>% st_transform(map_crs)
 lims <- st_bbox(countries)
 
 state_lines <- NULL
@@ -529,79 +481,137 @@ if (show_state_lines) {
   }
 }
 
-# =============================================================================
-# 6. DRAW THE FIVE MAPS
-# =============================================================================
-
-cat("\n=== 5. DRAWING MAPS ===\n")
+# One point per site name per stage on the maps (as in Step 4).
+map_points <- sites_sf %>%
+  mutate(Map_Site = if_else(is.na(SiteName) | SiteName == "", Site_Key, SiteName)) %>%
+  group_by(Stage_Number, Database, Map_Site) %>%
+  slice(1) %>%
+  ungroup()
 
 use_repel <- requireNamespace("ggrepel", quietly = TRUE)
 
-for (s in 1:5) {
-  pts <- filter(sites_sf, Stage_Number == s)
+# =============================================================================
+# 5. DRAW THE MAPS (ONE SET OF FIVE PER LEVEL)
+# =============================================================================
 
-  p <- ggplot() +
-    geom_sf(data = countries, fill = no_data_fill, colour = NA) +
-    geom_sf(data = physio, aes(fill = Tint), colour = "grey35", linewidth = 0.2) +
-    scale_fill_manual(values = region_tints, guide = "none")
+country_code <- c(USA = "US", Canada = "CA")
 
-  if (!is.null(state_lines)) {
-    p <- p + geom_sf(data = state_lines, colour = "grey30", linewidth = 0.1, alpha = 0.35)
+for (lv in map_levels) {
+  cat("\n=== 5. MAPS AT", toupper(lv), "LEVEL ===\n")
+  level_dir <- file.path(output_dir, paste0(lv, "s"))
+  dir.create(level_dir, showWarnings = FALSE)
+
+  polys <- physio_levels[[lv]]
+  if (simplify_m > 0) polys <- st_simplify(polys, dTolerance = simplify_m, preserveTopology = TRUE)
+
+  # Number the units: US first, then Canada; same-named units share a number.
+  key <- st_drop_geometry(polys) %>%
+    group_by(Unit) %>%
+    summarise(first = min(match(Country, c("USA", "Canada"))),
+              Countries = paste(country_code[sort(unique(Country), decreasing = TRUE)],
+                                collapse = ", "),
+              .groups = "drop") %>%
+    arrange(first, Unit) %>%
+    mutate(Number = row_number(),
+           Key_Label = sprintf("%2d  %s (%s)", Number, Unit, Countries)) %>%
+    select(Number, Unit, Countries, Key_Label)
+  write.csv(select(key, Number, Unit, Countries),
+            file.path(output_dir, paste0("physio_units_key_", lv, "s.csv")), row.names = FALSE)
+
+  polys <- polys %>%
+    group_by(Unit) %>%
+    summarise(.groups = "drop") %>%
+    polygons_only() %>%
+    left_join(key, by = "Unit")
+
+  # Map colouring: touching units (within 20 km) get different tints.
+  touching <- st_is_within_distance(polys, polys, dist = 20000)
+  tint <- integer(nrow(polys))
+  for (i in order(lengths(touching), decreasing = TRUE)) {
+    used <- tint[setdiff(touching[[i]], i)]
+    tint[i] <- which(!seq_along(region_tints) %in% used)[1]
+    if (is.na(tint[i])) tint[i] <- 1L
   }
+  polys$Tint <- factor(tint)
 
-  p <- p +
-    geom_sf(data = countries, fill = NA, colour = "grey20", linewidth = 0.3)
+  # Number labels inside the largest piece of each unit.
+  label_pts <- polys %>%
+    select(Number) %>%
+    st_set_agr("constant") %>%
+    st_cast("POLYGON", warn = FALSE) %>%
+    mutate(area = as.numeric(st_area(.))) %>%
+    group_by(Number) %>%
+    slice_max(area, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    st_set_agr("constant") %>%
+    st_point_on_surface()
+  label_xy <- cbind(st_drop_geometry(label_pts)["Number"], st_coordinates(label_pts))
+  label_xy$Key <- key$Key_Label[match(label_xy$Number, key$Number)]
 
-  # Unit numbers (with a white halo when ggrepel is available).
-  if (use_repel) {
-    p <- p + ggrepel::geom_text_repel(
-      data = label_xy, aes(x = X, y = Y, label = Number),
-      size = 2.4, fontface = "bold", colour = "grey15",
-      bg.color = "white", bg.r = 0.15, min.segment.length = 0.3,
-      segment.colour = "grey30", segment.size = 0.2, seed = 1
-    )
-  } else {
-    p <- p + geom_text(data = label_xy, aes(x = X, y = Y, label = Number),
-                       size = 2.4, fontface = "bold", colour = "grey15")
+  key_cols <- if (nrow(key) > 30) 2 else 1
+
+  for (s in 1:5) {
+    pts <- filter(map_points, Stage_Number == s)
+
+    p <- ggplot() +
+      geom_sf(data = countries, fill = no_data_fill, colour = NA) +
+      geom_sf(data = polys, aes(fill = Tint), colour = "grey35", linewidth = 0.2) +
+      scale_fill_manual(values = region_tints, guide = "none")
+
+    if (!is.null(state_lines)) {
+      p <- p + geom_sf(data = state_lines, colour = "grey30", linewidth = 0.1, alpha = 0.35)
+    }
+    p <- p + geom_sf(data = countries, fill = NA, colour = "grey20", linewidth = 0.3)
+
+    if (use_repel) {
+      p <- p + ggrepel::geom_text_repel(
+        data = label_xy, aes(x = X, y = Y, label = Number),
+        size = 2.3, fontface = "bold", colour = "grey15",
+        bg.color = "white", bg.r = 0.15, min.segment.length = 0.3,
+        segment.colour = "grey30", segment.size = 0.2, max.overlaps = Inf, seed = 1
+      )
+    } else {
+      p <- p + geom_text(data = label_xy, aes(x = X, y = Y, label = Number),
+                         size = 2.3, fontface = "bold", colour = "grey15")
+    }
+
+    # Invisible layer that turns the numbered key into the legend.
+    p <- p +
+      geom_point(data = label_xy, aes(x = X, y = Y, shape = Key), alpha = 0) +
+      scale_shape_manual(values = rep(32, nrow(key)), breaks = key$Key_Label,
+                         name = paste("Physiographic", lv, "units")) +
+      guides(shape = guide_legend(ncol = key_cols, override.aes = list(alpha = 0)))
+
+    # Sites on top: solid points with a thin white ring.
+    p <- p +
+      geom_sf(data = pts, shape = 21, fill = point_fill, colour = "white",
+              stroke = 0.3, size = point_size) +
+      coord_sf(crs = map_crs, xlim = lims[c("xmin", "xmax")], ylim = lims[c("ymin", "ymax")],
+               expand = FALSE) +
+      labs(title = stage_titles[s],
+           subtitle = paste0(nrow(pts), " sites (FAUNMAP + PBDB) on physiographic ", lv,
+                             "s of the USA and Canada"),
+           x = NULL, y = NULL) +
+      theme_bw(base_size = 10) +
+      theme(
+        panel.background = element_rect(fill = sea_fill),
+        panel.grid = element_line(colour = "white", linewidth = 0.3),
+        plot.title = element_text(face = "bold"),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        legend.text = element_text(size = 6.5, family = "mono"),
+        legend.title = element_text(size = 8, face = "bold"),
+        legend.key.size = unit(0.3, "lines")
+      )
+
+    width <- if (key_cols == 2) 14 else 11
+    file <- file.path(level_dir, sprintf("physio_%s_stage%d_%s.png", lv, s, stage_names[s]))
+    ggsave(file, p, width = width, height = 7.5, dpi = 300)
+    cat(sprintf("  %-12s %5d sites -> %s\n", stage_names[s], nrow(pts), file))
   }
-
-  # Invisible layer that turns the numbered key into the legend.
-  p <- p +
-    geom_point(data = transform(label_xy, Key = key$Key_Label[match(Number, key$Number)]),
-               aes(x = X, y = Y, shape = Key), alpha = 0) +
-    scale_shape_manual(values = rep(32, nrow(key)), breaks = key$Key_Label,
-                       name = "Physiographic units") +
-    guides(shape = guide_legend(ncol = 1, override.aes = list(alpha = 0)))
-
-  # Sites on top: solid points with a thin white ring.
-  p <- p +
-    geom_sf(data = pts, shape = 21, fill = point_fill, colour = "white",
-            stroke = 0.3, size = point_size) +
-    coord_sf(crs = map_crs, xlim = lims[c("xmin", "xmax")], ylim = lims[c("ymin", "ymax")],
-             expand = FALSE) +
-    labs(title = stage_titles[s],
-         subtitle = paste0(nrow(pts), " sites (FAUNMAP + PBDB)"),
-         x = NULL, y = NULL) +
-    theme_bw(base_size = 10) +
-    theme(
-      panel.background = element_rect(fill = sea_fill),
-      panel.grid = element_line(colour = "white", linewidth = 0.3),
-      plot.title = element_text(face = "bold"),
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      legend.text = element_text(size = 7, family = "mono"),
-      legend.title = element_text(size = 8, face = "bold"),
-      legend.key.size = unit(0.32, "lines")
-    )
-
-  file <- file.path(output_dir, sprintf("physio_map_stage%d_%s.png", s, stage_names[s]))
-  ggsave(file, p, width = 11, height = 7.5, dpi = 300)
-  cat(sprintf("  %-12s %5d sites -> %s\n", stage_names[s], nrow(pts), file))
 }
 
-cat("\n  Unit key           -> ", file.path(output_dir, "physio_units_key.csv"), "\n", sep = "")
-cat("  Site units         -> ", file.path(output_dir, "site_physio_units.csv"), "\n", sep = "")
-
 cat("\n=== STEP 5 COMPLETE ===\n")
-cat("Layers drawn:", paste(names(layers), collapse = ", "), "\n")
-cat("Objects in your Environment: physio, key, site_units, sites_sf\n")
+cat("Database: site_physio_database (one row per site and stage) and\n",
+    "occurrences_physio (every fauna record / occurrence), in\n  ", output_dir, "\n", sep = "")
+cat("Objects in your Environment: site_physio_database, occurrences_physio, us_tree\n")
