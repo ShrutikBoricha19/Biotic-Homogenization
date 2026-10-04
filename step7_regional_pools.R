@@ -1,5 +1,5 @@
 # =============================================================================
-# STEP 7: REGIONAL SPECIES POOLS AND TEMPORAL SIMPSON DISSIMILARITY
+# STEP 7: REGIONAL SPECIES POOLS AND SIMPSON DISSIMILARITY THROUGH TIME
 #
 # For four physiographic provinces (Fenneman & Johnson 1946):
 #   Pacific Border, Basin and Range, Great Plains, Coastal Plain
@@ -7,19 +7,35 @@
 # 1. Regional species pool: every species recorded at any site in the province
 #    during a geological stage (FAUNMAP + PBDB, from the Step 6 matrices).
 # 2. Column graph of the number of sites per stage in each province.
-# 3. Simpson dissimilarity (beta_SIM) of each province's pool WITH ITSELF
-#    THROUGH TIME (Zanclean v Piacenzian v Gelasian v Calabrian v Chibanian),
-#    using the formulas of Rowan et al. (2024, Nat. Ecol. Evol.), after
-#    Baselga (2010) and Baselga et al. (2007):
+# 3. Simpson dissimilarity (beta_SIM), formulas of Rowan et al. (2024, Nat.
+#    Ecol. Evol.) after Baselga (2010):
 #
+#      pairwise:   beta_SIM = min(b, c) / (a + min(b, c))
 #      multisite:  beta_SIM = sum_{i<j} min(b_ij, b_ji) /
 #                  [ sum_i S_i - S_T + sum_{i<j} min(b_ij, b_ji) ]     (Eq. 1)
-#      pairwise:   beta_SIM = min(b, c) / (a + min(b, c))
-#      endemic and shared components of the multisite value: Eqs. 2 and 3.
 #
-#    Here i, j are STAGES (not subregions): b_ij = species in stage i's pool
-#    but not stage j's, S_i = pool size, S_T = all species across stages.
-#    0 = identical pools (or one nested in the other); 1 = no species shared.
+#    0 = same species (or one set nested in the other); 1 = no species shared.
+#
+#    A. HOMOGENIZATION (the Rowan et al. 2024 approach)
+#       Rowan et al. computed ONE multisite beta_SIM per time bin, across the
+#       spatial units (subregions) of that bin, and then read the TREND of
+#       those values through time. Here: within each province and each stage,
+#       multisite beta_SIM across the sites (or US physiographic sections, see
+#       'spatial_unit') of that province. One value per province per stage.
+#         falling values through time = sites becoming more alike (homogenization)
+#         rising values through time  = sites becoming more different
+#       Multisite beta_SIM rises with the number of units compared, so each
+#       value is also computed on random subsets of 'n_units_sample' units
+#       (the plotted value; bars = 95% range of the subsets). This makes stages
+#       with many and few sites comparable. The full value (all units) and the
+#       mean pairwise value are saved in the table as well.
+#
+#    B. TURNOVER OF THE POOL BETWEEN SUCCESSIVE STAGES
+#       Pairwise beta_SIM between the pool of one stage and the pool of the
+#       NEXT stage only (Zanclean-Piacenzian, Piacenzian-Gelasian, ...).
+#       Non-adjacent stages are not compared. If a stage has no species in a
+#       province, the two transitions touching it cannot be computed and the
+#       line is broken there (not drawn across the gap).
 #
 # Inputs:
 #   Outputs/6_matrices/all_records_final.csv              (Step 6)
@@ -27,19 +43,18 @@
 #
 # Outputs (Outputs/7_regional_pools/):
 #   Figures (PNG 300 dpi + PDF, 16:9 slide format):
-#     sites_per_stage_<province>.png/.pdf      one column graph per province
-#     sites_per_stage_all_provinces.png/.pdf   the four together
-#     beta_pairwise_<province>.png/.pdf        stage-by-stage beta_SIM matrix
-#     beta_pairwise_all_provinces.png/.pdf     the four together
-#     beta_consecutive_all_provinces.png/.pdf  stage-to-stage turnover through time
-#     beta_multisite_all_provinces.png/.pdf    overall beta_SIM across all stages
+#     sites_per_stage_<province>.png/.pdf       one column graph per province
+#     sites_per_stage_all_provinces.png/.pdf    the four together
+#     beta_spatial_all_provinces.png/.pdf       A: within-stage beta_SIM through time
+#     beta_spatial_<province>.png/.pdf          A: one province per slide
+#     beta_consecutive_all_provinces.png/.pdf   B: successive-stage turnover
 #   Tables:
 #     regional_pools.xlsx            one sheet per province: species x stage (1/0)
 #     regional_pools_long.csv        province, stage, species, order, n sites
 #     pool_summary.csv               sites and species per province and stage
-#     beta_pairwise.csv              a, b, c and beta_SIM for every stage pair
-#     beta_consecutive.csv           beta_SIM between successive stages
-#     beta_multisite.csv             multisite beta_SIM, endemic and shared parts
+#     beta_spatial.csv               A: one row per province and stage
+#     beta_spatial_trend.csv         A: change between successive stages (up/down)
+#     beta_consecutive.csv           B: beta_SIM between successive stage pools
 #     site_province_conflicts.csv    sites whose analysis units fall in >1 province
 #
 # Run the whole file (Ctrl+Shift+S in RStudio) after Steps 5 and 6.
@@ -67,6 +82,13 @@ physio_file  <- file.path("Outputs", "maps", "physiographic", "site_physio_datab
 output_dir   <- file.path(work_dir, "Outputs", "7_regional_pools")
 
 provinces <- c("Pacific Border", "Basin and Range", "Great Plains", "Coastal Plain")
+
+# Analysis A (within-stage dissimilarity, Rowan et al. 2024 approach):
+spatial_unit   <- "site"   # "site" = each site is a unit; "section" = US physiographic
+                           # sections (sites pooled per section, like Rowan's subregions)
+n_units_sample <- 3        # units drawn per subset (Rowan et al. compared 3 subregions)
+n_resamples    <- 999      # random subsets per province and stage
+set.seed(2024)             # same subsets every run
 
 # One colour per province (validated colour-blind-safe set).
 province_colours <- c(
@@ -143,7 +165,7 @@ beta_sim_pair <- function(A, B) {
 beta_sim_multi <- function(pools) {
   pools <- pools[lengths(pools) > 0]
   k <- length(pools)
-  if (k < 2) return(c(n_stages = k, beta_SIM = NA, beta_SIM_END = NA, beta_SIM_SH = NA))
+  if (k < 2) return(c(n_units = k, beta_SIM = NA, beta_SIM_END = NA, beta_SIM_SH = NA))
   S_i <- lengths(pools)
   S_T <- length(unique(unlist(pools)))
   min_sum <- 0; a_sum <- 0
@@ -153,10 +175,33 @@ beta_sim_multi <- function(pools) {
     a_sum <- a_sum + length(intersect(pools[[i]], pools[[j]]))
   }
   shared <- sum(S_i) - S_T
-  c(n_stages = k,
+  c(n_units = k,
     beta_SIM     = min_sum / (shared + min_sum),
     beta_SIM_END = min_sum / (min_sum + a_sum),
     beta_SIM_SH  = shared / sum(S_i))
+}
+
+# Mean of all pairwise beta_SIM values among a list of species sets.
+beta_sim_mean_pair <- function(pools) {
+  pools <- pools[lengths(pools) > 0]
+  k <- length(pools)
+  if (k < 2) return(NA_real_)
+  v <- c()
+  for (i in 1:(k - 1)) for (j in (i + 1):k) v <- c(v, beta_sim_pair(pools[[i]], pools[[j]])[["beta"]])
+  mean(v)
+}
+
+# Multisite beta_SIM on subsets of n units: every subset if there are few,
+# otherwise n_resamples random subsets. Returns mean and 95% range.
+beta_sim_resampled <- function(pools, n) {
+  pools <- pools[lengths(pools) > 0]
+  k <- length(pools)
+  if (k < n || n < 2) return(c(mean = NA, lo = NA, hi = NA, n_subsets = 0))
+  subsets <- if (choose(k, n) <= n_resamples) combn(k, n, simplify = FALSE) else
+    replicate(n_resamples, sample.int(k, n), simplify = FALSE)
+  v <- vapply(subsets, function(s) beta_sim_multi(pools[s])[["beta_SIM"]], numeric(1))
+  c(mean = mean(v), lo = unname(quantile(v, 0.025)), hi = unname(quantile(v, 0.975)),
+    n_subsets = length(v))
 }
 
 # Shared slide theme.
@@ -193,7 +238,8 @@ physio  <- read_input(physio_file)
 # province of most units is used and the site is listed in the conflicts file.
 site_province_all <- physio %>%
   transmute(Stage_Number = as.integer(Stage_Number), Database,
-            SiteName = trimws(SiteName), Province = trimws(US_Province)) %>%
+            SiteName = trimws(SiteName), Province = trimws(US_Province),
+            Section = if ("US_Section" %in% names(physio)) trimws(US_Section) else NA_character_) %>%
   filter(!is.na(SiteName), !is.na(Province))
 
 site_province <- site_province_all %>%
@@ -207,6 +253,17 @@ conflicts <- site_province %>% filter(n_provinces > 1)
 site_province <- site_province %>%
   distinct(Stage_Number, Database, SiteName, .keep_all = TRUE) %>%
   select(Stage_Number, Database, SiteName, Province)
+
+# Physiographic section of each site (majority within its province).
+site_section <- site_province_all %>%
+  filter(!is.na(Section)) %>%
+  count(Stage_Number, Database, SiteName, Province, Section) %>%
+  group_by(Stage_Number, Database, SiteName, Province) %>%
+  slice_max(n, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(-n)
+site_province <- left_join(site_province, site_section,
+                           by = c("Stage_Number", "Database", "SiteName", "Province"))
 save_csv(conflicts, "site_province_conflicts")
 
 # Match the requested provinces regardless of capitalisation.
@@ -223,6 +280,7 @@ if (any(is.na(prov_match))) {
 recs <- records %>%
   transmute(Stage_Number = as.integer(Stage_Number), Database,
             SiteName = trimws(SiteName), GenusSpecies, Order) %>%
+  filter(!is.na(GenusSpecies)) %>%
   inner_join(site_province, by = c("Stage_Number", "Database", "SiteName")) %>%
   mutate(Province = provinces[match(tolower(Province), tolower(provinces))]) %>%
   filter(!is.na(Province), Stage_Number %in% 1:5) %>%
@@ -296,44 +354,98 @@ pool_sets <- lapply(provinces, function(p) {
 names(pool_sets) <- provinces
 
 # =============================================================================
-# 3. SIMPSON DISSIMILARITY THROUGH TIME, WITHIN EACH PROVINCE
+# 3A. WITHIN-STAGE DISSIMILARITY ACROSS SITES (Rowan et al. 2024 approach)
 # =============================================================================
 
-cat("\n=== 3. SIMPSON DISSIMILARITY (beta_SIM) ===\n")
+unit_word <- if (spatial_unit == "section") "sections" else "sites"
+cat(sprintf("\n=== 3A. WITHIN-STAGE beta_SIM ACROSS %s (Rowan et al. 2024 approach) ===\n",
+            toupper(unit_word)))
 
-beta_pairwise <- bind_rows(lapply(provinces, function(p) {
-  bind_rows(lapply(1:4, function(i) bind_rows(lapply((i + 1):5, function(j) {
-    r <- beta_sim_pair(pool_sets[[p]][[i]], pool_sets[[p]][[j]])
-    data.frame(Province = p, Stage_A = stage_names[i], Stage_B = stage_names[j],
-               shared_a = r[["a"]], only_A_b = r[["b"]], only_B_c = r[["c"]],
-               beta_SIM = r[["beta"]])
-  }))))
-}))
+recs_units <- recs %>%
+  mutate(Unit = if (spatial_unit == "section") Section else paste(Database, SiteName, sep = " | "))
+if (spatial_unit == "section") {
+  n_no_section <- n_distinct(paste(recs_units$Database, recs_units$SiteName)[is.na(recs_units$Unit)])
+  if (n_no_section > 0) cat(sprintf("  NOTE: %d sites have no US section and are left out of 3A\n", n_no_section))
+}
+recs_units <- filter(recs_units, !is.na(Unit))
 
-beta_consecutive <- beta_pairwise %>%
-  filter(match(Stage_B, stage_names) == match(Stage_A, stage_names) + 1) %>%
-  mutate(Boundary_Ma = stage_young[match(Stage_A, stage_names)],
-         Transition = paste(Stage_A, "to", Stage_B))
+beta_spatial <- bind_rows(lapply(provinces, function(p) bind_rows(lapply(1:5, function(s) {
+  d <- filter(recs_units, Province == p, Stage_Number == s)
+  units <- lapply(split(d$GenusSpecies, d$Unit), unique)
+  full <- beta_sim_multi(units)
+  rs <- beta_sim_resampled(units, n_units_sample)
+  data.frame(Province = p, Stage_Number = s, Stage = stage_names[s],
+             Mid_Ma = (stage_older[s] + stage_young[s]) / 2,
+             n_units = length(units), n_species = n_distinct(d$GenusSpecies),
+             beta_SIM = rs[["mean"]], beta_SIM_lo95 = rs[["lo"]], beta_SIM_hi95 = rs[["hi"]],
+             n_subsets = rs[["n_subsets"]],
+             beta_SIM_all_units = full[["beta_SIM"]],
+             beta_SIM_END_all_units = full[["beta_SIM_END"]],
+             beta_SIM_SH_all_units = full[["beta_SIM_SH"]],
+             mean_pairwise_beta_SIM = beta_sim_mean_pair(units))
+}))))
+names(beta_spatial)[names(beta_spatial) == "n_units"] <- paste0("n_", unit_word)
 
-beta_multisite <- bind_rows(lapply(provinces, function(p) {
-  r <- beta_sim_multi(pool_sets[[p]])
-  data.frame(Province = p,
-             Stages_with_species = paste(stage_names[lengths(pool_sets[[p]]) > 0], collapse = "; "),
-             n_stages = r[["n_stages"]], beta_SIM = r[["beta_SIM"]],
-             beta_SIM_END = r[["beta_SIM_END"]], beta_SIM_SH = r[["beta_SIM_SH"]],
-             n_species_total = length(unique(unlist(pool_sets[[p]]))))
-}))
+# Change between successive stages that have a value. A change is called
+# "clear" only when the 95% ranges of the two stages do not overlap.
+beta_spatial_trend <- beta_spatial %>%
+  filter(!is.na(beta_SIM)) %>%
+  group_by(Province) %>%
+  arrange(Stage_Number, .by_group = TRUE) %>%
+  mutate(From = lag(Stage), From_n = lag(Stage_Number),
+         b_from = lag(beta_SIM), lo_from = lag(beta_SIM_lo95), hi_from = lag(beta_SIM_hi95)) %>%
+  ungroup() %>%
+  filter(!is.na(From)) %>%
+  transmute(
+    Province = factor(Province, levels = provinces),
+    Comparison = paste(From, "to", Stage),
+    Skipped_stage = ifelse(Stage_Number - From_n > 1,
+                           "yes - stage(s) in between had too few sites", ""),
+    beta_SIM_from = round(b_from, 3), beta_SIM_to = round(beta_SIM, 3),
+    Change = round(beta_SIM - b_from, 3),
+    Direction = case_when(
+      beta_SIM_lo95 > hi_from ~ "increase: sites MORE different",
+      beta_SIM_hi95 < lo_from ~ "decrease: sites MORE alike (homogenization)",
+      TRUE ~ ifelse(beta_SIM > b_from, "slight increase (95% ranges overlap)",
+                    "slight decrease (95% ranges overlap)"))
+  ) %>%
+  arrange(Province)
 
-save_csv(beta_pairwise, "beta_pairwise")
+save_csv(beta_spatial, "beta_spatial")
+save_csv(beta_spatial_trend, "beta_spatial_trend")
+
+cat(sprintf("  Multisite beta_SIM among %s within each stage (mean of subsets of %d %s):\n",
+            unit_word, n_units_sample, unit_word))
+print(as.data.frame(beta_spatial %>%
+        transmute(Province, Stage, n = .data[[paste0("n_", unit_word)]],
+                  beta_SIM = round(beta_SIM, 3), lo95 = round(beta_SIM_lo95, 3),
+                  hi95 = round(beta_SIM_hi95, 3))), row.names = FALSE)
+cat("\n  Trend (lower beta_SIM = sites more alike = homogenization):\n")
+print(as.data.frame(select(beta_spatial_trend, Province, Comparison, beta_SIM_from,
+                           beta_SIM_to, Direction)), row.names = FALSE)
+
+# =============================================================================
+# 3B. TURNOVER OF EACH POOL BETWEEN SUCCESSIVE STAGES
+# =============================================================================
+
+cat("\n=== 3B. POOL TURNOVER BETWEEN SUCCESSIVE STAGES ===\n")
+
+beta_consecutive <- bind_rows(lapply(provinces, function(p) bind_rows(lapply(1:4, function(i) {
+  A <- pool_sets[[p]][[i]]; B <- pool_sets[[p]][[i + 1]]
+  r <- beta_sim_pair(A, B)
+  empty <- stage_names[c(i, i + 1)][c(length(A), length(B)) == 0]
+  data.frame(Province = p, Transition = paste(stage_names[i], "to", stage_names[i + 1]),
+             Stage_A = stage_names[i], Stage_B = stage_names[i + 1],
+             Stage_A_n = i, Boundary_Ma = stage_young[i],
+             n_species_A = length(A), n_species_B = length(B),
+             shared_a = r[["a"]], only_A_b = r[["b"]], only_B_c = r[["c"]],
+             beta_SIM = r[["beta"]],
+             Note = if (length(empty)) paste("no species in", paste(empty, collapse = " and ")) else "")
+}))))
+
 save_csv(beta_consecutive, "beta_consecutive")
-save_csv(beta_multisite, "beta_multisite")
-
-cat("  Multisite beta_SIM across stages (0 = same pool through time, 1 = complete turnover):\n")
-print(as.data.frame(mutate(beta_multisite, across(where(is.numeric), ~ round(.x, 3))) %>%
-        select(Province, n_stages, beta_SIM, beta_SIM_END, beta_SIM_SH)), row.names = FALSE)
-cat("\n  Successive stages:\n")
 print(as.data.frame(beta_consecutive %>% mutate(beta_SIM = round(beta_SIM, 3)) %>%
-        select(Province, Transition, shared_a, beta_SIM)), row.names = FALSE)
+        select(Province, Transition, shared_a, beta_SIM, Note)), row.names = FALSE)
 
 # =============================================================================
 # 4. FIGURES
@@ -341,31 +453,39 @@ print(as.data.frame(beta_consecutive %>% mutate(beta_SIM = round(beta_SIM, 3)) %
 
 cat("\n=== 4. FIGURES ===\n")
 
-stage_axis <- function(n) {
+stage_axis <- function() {
   paste0(stage_names, "\n", formatC(stage_older, format = "g"), "-",
          formatC(stage_young, format = "g"), " Ma")
 }
 
+# Alternating background bands, one per stage (x axis in Ma, oldest left).
+bands <- data.frame(xmin = stage_young, xmax = stage_older, Stage = stage_names,
+                    fill = rep(c("#f3f3f0", "#ffffff"), length.out = 5))
+
+# Line segments only between neighbouring points that both have a value, so
+# a missing stage leaves a visible gap instead of a line across it.
+gap_segments <- function(d, x, order_col) {
+  d %>%
+    arrange(Province, .data[[order_col]]) %>%
+    group_by(Province) %>%
+    mutate(x2 = lead(.data[[x]]), y2 = lead(beta_SIM)) %>%
+    ungroup() %>%
+    filter(!is.na(beta_SIM), !is.na(y2))
+}
+
 # ---- 4a. Sites per stage: one column graph per province ----------------------
-site_plot <- function(d, title, colour, facet = FALSE) {
+site_plot <- function(d, title, colour) {
   ymax <- max(1, d$n_sites) * 1.15
-  p <- ggplot(d, aes(x = Stage, y = n_sites)) +
+  ggplot(d, aes(x = Stage, y = n_sites)) +
     geom_col(fill = colour, width = 0.68) +
     geom_text(aes(label = n_sites), vjust = -0.45, size = base_size / 3.2,
               fontface = "bold", colour = ink) +
     scale_x_discrete(labels = setNames(stage_axis(), stage_names), drop = FALSE) +
     scale_y_continuous(limits = c(0, ymax), expand = expansion(mult = c(0, 0.02)),
                        breaks = scales::pretty_breaks(5)) +
-    labs(x = NULL, y = "Number of sites") +
+    labs(title = title, x = NULL, y = "Number of sites",
+         subtitle = "Sites contributing species to the regional pool (FAUNMAP + PBDB), oldest to youngest") +
     theme_slide()
-  if (facet) {
-    p + facet_wrap(~ Province, ncol = 2, scales = "free_y") +
-      labs(title = title,
-           subtitle = "Sites contributing species to each regional pool (FAUNMAP + PBDB), oldest to youngest")
-  } else {
-    p + labs(title = title,
-             subtitle = "Sites contributing species to the regional pool (FAUNMAP + PBDB), oldest to youngest")
-  }
 }
 
 for (p in provinces) {
@@ -389,84 +509,70 @@ p_all_sites <- ggplot(pool_summary, aes(x = Stage, y = n_sites, fill = Province)
 save_fig(p_all_sites, "sites_per_stage_all_provinces")
 cat("  Site-count column graphs saved\n")
 
-# ---- 4b. Pairwise beta_SIM matrices ------------------------------------------
-pair_grid <- function(p) {
-  half <- beta_pairwise %>% filter(Province == p)
-  # Lower triangle: row = later stage, column = earlier stage.
-  expand_grid(Row = stage_names, Col = stage_names) %>%
-    mutate(i = match(Col, stage_names), j = match(Row, stage_names)) %>%
-    filter(j > i) %>%
-    left_join(half, by = c("Col" = "Stage_A", "Row" = "Stage_B")) %>%
-    mutate(Province = p)
-}
+# ---- 4b. A: within-stage beta_SIM through time -------------------------------
+spatial_caption <- paste0(
+  "Each point: multisite Simpson dissimilarity among ", unit_word, " of the province in that stage ",
+  "(mean of subsets of ", n_units_sample, " ", unit_word, "; bars = 95% range).\n",
+  "Lower = ", unit_word, " share more species (more homogeneous). n = ", unit_word,
+  " with species; no point = fewer than ", n_units_sample, ". Approach of Rowan et al. (2024).")
 
-pool_label <- function(p) {
-  s <- filter(pool_summary, Province == p)
-  setNames(sprintf("%s\n%d spp.\n%d sites", stage_names, s$n_species, s$n_sites), stage_names)
-}
-
-heat_plot <- function(g, title, subtitle, labels_x, labels_y, facet = FALSE, text_size = 6.5) {
-  g <- g %>%
-    mutate(Row = factor(Row, levels = rev(stage_names)),
-           Col = factor(Col, levels = stage_names),
-           lab = ifelse(is.na(beta_SIM), "no data", sprintf("%.2f", beta_SIM)),
-           lab_col = ifelse(!is.na(beta_SIM) & beta_SIM > 0.5, "white", ink))
-  p <- ggplot(g, aes(x = Col, y = Row)) +
-    geom_tile(aes(fill = beta_SIM), colour = "white", linewidth = 1.5) +
-    geom_text(aes(label = lab, colour = lab_col), size = text_size, fontface = "bold") +
-    scale_colour_identity() +
-    scale_fill_gradientn(colours = heat_ramp, limits = c(0, 1), na.value = no_data,
-                         breaks = c(0, 0.25, 0.5, 0.75, 1), name = beta_lab) +
-    scale_x_discrete(labels = labels_x, drop = TRUE, position = "bottom") +
-    scale_y_discrete(labels = labels_y, drop = TRUE) +
-    coord_equal() +
-    labs(title = title, subtitle = subtitle, x = NULL, y = NULL,
-         caption = paste0("0 = same species (or one pool nested in the other); 1 = no species shared.\n",
-                          "Simpson dissimilarity after Rowan et al. (2024).")) +
+spatial_plot <- function(d, title, facet = FALSE) {
+  n_col <- paste0("n_", unit_word)
+  d <- d %>% mutate(Province = factor(Province, levels = provinces),
+                    n_lab = paste0("n=", .data[[n_col]]),
+                    n_col_ink = ifelse(is.na(beta_SIM), "#b0b0ab", ink_soft),
+                    v_lab = ifelse(is.na(beta_SIM), "", sprintf("%.2f", beta_SIM)))
+  sz <- if (facet) 0.8 else 1
+  stage_text <- if (facet) substr(stage_names, 1, 4) else stage_names
+  ggplot(d) +
+    geom_rect(data = bands, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = fill)) +
+    scale_fill_identity() +
+    geom_hline(yintercept = seq(0, 1, 0.25), colour = grid_col, linewidth = 0.4) +
+    geom_text(data = transform(bands, lab = stage_text),
+              aes(x = (xmin + xmax) / 2, y = 1.1, label = lab),
+              size = base_size / 3.9 * sz, colour = ink_soft) +
+    geom_errorbar(aes(x = Mid_Ma, ymin = beta_SIM_lo95, ymax = beta_SIM_hi95, colour = Province),
+                  width = 0.14, linewidth = 0.9, na.rm = TRUE) +
+    geom_segment(data = gap_segments(d, "Mid_Ma", "Stage_Number"),
+                 aes(x = Mid_Ma, xend = x2, y = beta_SIM, yend = y2, colour = Province),
+                 linewidth = 1.3) +
+    geom_point(aes(Mid_Ma, beta_SIM, colour = Province), size = 4.5 * sz, shape = 21,
+               fill = "white", stroke = 1.8, na.rm = TRUE) +
+    geom_text(aes(x = Mid_Ma - 0.12, y = beta_SIM, label = v_lab, colour = Province),
+              hjust = 0, vjust = -0.6, size = base_size / 3.4 * sz, fontface = "bold", na.rm = TRUE) +
+    geom_text(aes(x = Mid_Ma, y = -0.07, label = n_lab, colour = n_col_ink),
+              size = base_size / 4.2 * sz) +
+    scale_colour_manual(values = c(province_colours, setNames(c(ink_soft, "#b0b0ab"),
+                                                              c(ink_soft, "#b0b0ab")))) +
+    scale_x_reverse(limits = c(4.7, -0.15), breaks = c(4, 3, 2, 1, 0), expand = c(0.01, 0)) +
+    scale_y_continuous(limits = c(-0.12, 1.16), breaks = seq(0, 1, 0.25), expand = c(0, 0)) +
+    labs(title = title, x = "Age (Ma)", y = beta_lab, caption = spatial_caption) +
     theme_slide() +
-    theme(panel.grid = element_blank(),
-          panel.grid.major.y = element_blank(),
-          plot.title.position = "plot",
-          plot.caption.position = "plot",
-          axis.text = element_text(size = base_size * 0.75, lineheight = 0.9),
-          legend.position = "right",
-          legend.title = element_text(size = base_size, face = "bold"),
-          legend.key.height = unit(1.6, "cm"),
-          legend.key.width = unit(0.6, "cm"))
-  if (facet) p <- p + facet_wrap(~ Province, ncol = 2)
-  p
+    theme(plot.title.position = "plot", plot.caption.position = "plot") +
+    if (facet) facet_wrap(~ Province, ncol = 2) else NULL
 }
+
+p_spatial <- spatial_plot(beta_spatial, "Are sites within each province becoming more alike?", facet = TRUE) +
+  labs(subtitle = sprintf("Simpson dissimilarity among %s within each stage; falling line = homogenization",
+                          unit_word))
+save_fig(p_spatial, "beta_spatial_all_provinces", width = slide_w, height = slide_h * 1.25)
 
 for (p in provinces) {
-  m <- beta_multisite %>% filter(Province == p)
-  sub <- if (is.na(m$beta_SIM)) "Fewer than two stages with species - no comparison possible" else
-    sprintf("Pairwise Simpson dissimilarity between stage pools  |  multisite value (%d stages) = %.2f",
-            m$n_stages, m$beta_SIM)
-  lab <- pool_label(p)
-  save_fig(heat_plot(pair_grid(p), paste(p, "- species pool turnover through time"), sub,
-                     labels_x = lab, labels_y = lab),
-           paste0("beta_pairwise_", file_stub(p)), width = slide_w, height = slide_h)
+  d <- filter(beta_spatial, Province == p)
+  pp <- spatial_plot(d, paste(p, "- dissimilarity among", unit_word, "through time")) +
+    labs(subtitle = "Multisite Simpson dissimilarity within each stage; falling line = homogenization")
+  save_fig(pp, paste0("beta_spatial_", file_stub(p)))
 }
+cat("  Within-stage beta_SIM figures saved\n")
 
-g_all <- bind_rows(lapply(provinces, pair_grid)) %>%
-  mutate(Province = factor(Province, levels = provinces))
-p_all_heat <- heat_plot(g_all, "Species pool turnover through time in four provinces",
-                        "Pairwise Simpson dissimilarity between the stage pools of each province",
-                        labels_x = setNames(substr(stage_names, 1, 4), stage_names),
-                        labels_y = setNames(substr(stage_names, 1, 4), stage_names),
-                        facet = TRUE, text_size = 4.6)
-save_fig(p_all_heat, "beta_pairwise_all_provinces", width = slide_w, height = slide_h * 1.35)
-cat("  Pairwise beta_SIM matrices saved\n")
-
-# ---- 4c. Successive-stage turnover through time ------------------------------
-bands <- data.frame(xmin = stage_young, xmax = stage_older, Stage = stage_names,
-                    fill = rep(c("#f3f3f0", "#ffffff"), length.out = 5))
+# ---- 4c. B: successive-stage turnover through time ---------------------------
 cons <- beta_consecutive %>% mutate(Province = factor(Province, levels = provinces))
 label_pts <- cons %>% filter(!is.na(beta_SIM)) %>%
   group_by(Province) %>% slice_min(Boundary_Ma, n = 1) %>% ungroup()
 
 # Spread end labels vertically so they never overlap (minimum gap in y units).
 spread <- function(y, gap = 0.07) {
+  if (length(y) == 0) return(y)
   o <- order(y); z <- y[o]
   for (k in seq_along(z)[-1]) z[k] <- max(z[k], z[k - 1] + gap)
   over <- max(0, z[length(z)] - 1.02); z <- z - over
@@ -475,14 +581,23 @@ spread <- function(y, gap = 0.07) {
 label_pts$label_y <- spread(label_pts$beta_SIM)
 label_x <- 0.05
 
+missing <- filter(cons, is.na(beta_SIM))
+cons_caption <- paste0(
+  "Each point compares a province's species pool with its pool in the NEXT stage; it sits on the boundary between them.\n",
+  if (nrow(missing)) paste0("Gaps (no comparison possible): ",
+                           paste(sprintf("%s %s", missing$Province, missing$Transition), collapse = "; "),
+                           ".\n") else "",
+  "Pairwise Simpson dissimilarity after Rowan et al. (2024).")
+
 p_cons <- ggplot() +
-  geom_rect(data = bands, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-            fill = bands$fill) +
+  geom_rect(data = bands, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = fill)) +
+  scale_fill_identity() +
   geom_hline(yintercept = seq(0, 1, 0.25), colour = grid_col, linewidth = 0.4) +
   geom_text(data = bands, aes(x = (xmin + xmax) / 2, y = 1.07, label = Stage),
             size = base_size / 3.9, colour = ink_soft) +
-  geom_line(data = filter(cons, !is.na(beta_SIM)),
-            aes(Boundary_Ma, beta_SIM, colour = Province, group = Province), linewidth = 1.3) +
+  geom_segment(data = gap_segments(cons, "Boundary_Ma", "Stage_A_n"),
+               aes(x = Boundary_Ma, xend = x2, y = beta_SIM, yend = y2, colour = Province),
+               linewidth = 1.3) +
   geom_point(data = cons, aes(Boundary_Ma, beta_SIM, colour = Province),
              size = 4.2, shape = 21, fill = "white", stroke = 1.8, na.rm = TRUE) +
   geom_segment(data = label_pts, aes(x = Boundary_Ma - 0.06, xend = label_x + 0.03,
@@ -495,33 +610,13 @@ p_cons <- ggplot() +
   scale_y_continuous(limits = c(0, 1.1), breaks = seq(0, 1, 0.25), expand = c(0, 0)) +
   labs(title = "Turnover of each regional pool between successive stages",
        subtitle = "Pairwise Simpson dissimilarity at each stage boundary (higher = more species replaced)",
-       x = "Age (Ma)", y = beta_lab,
-       caption = "Points sit on the boundary between the two stages compared. After Rowan et al. (2024).") +
+       x = "Age (Ma)", y = beta_lab, caption = cons_caption) +
   theme_slide() +
-  theme(panel.grid.major.x = element_blank(), panel.grid.major.y = element_line(colour = grid_col))
-save_fig(p_cons, "beta_consecutive_all_provinces")
+  theme(plot.title.position = "plot", plot.caption.position = "plot")
+save_fig(p_cons, "beta_consecutive_all_provinces", width = slide_w, height = slide_h * 1.05)
 cat("  Successive-stage turnover figure saved\n")
-
-# ---- 4d. Multisite beta_SIM per province -------------------------------------
-ms <- beta_multisite %>%
-  mutate(Province = factor(Province, levels = provinces),
-         lab = ifelse(is.na(beta_SIM), "n/a", sprintf("%.2f", beta_SIM)))
-p_ms <- ggplot(ms, aes(x = Province, y = beta_SIM, fill = Province)) +
-  geom_col(width = 0.62, na.rm = TRUE) +
-  geom_text(aes(y = coalesce(beta_SIM, 0), label = lab), vjust = -0.5,
-            size = base_size / 3, fontface = "bold", colour = ink) +
-  geom_text(aes(y = 0, label = paste0(n_stages, " stages, ", n_species_total, " spp.")),
-            vjust = 1.6, size = base_size / 4.2, colour = ink_soft) +
-  scale_fill_manual(values = province_colours) +
-  scale_y_continuous(limits = c(-0.08, 1.05), breaks = seq(0, 1, 0.25), expand = c(0, 0)) +
-  labs(title = "Overall turnover of each regional pool, Zanclean to Chibanian",
-       subtitle = "Multisite Simpson dissimilarity across all stages with species (Rowan et al. 2024, Eq. 1)",
-       x = NULL, y = beta_lab) +
-  theme_slide()
-save_fig(p_ms, "beta_multisite_all_provinces")
-cat("  Multisite beta_SIM figure saved\n")
 
 cat("\n=== STEP 7 COMPLETE ===\n")
 cat("Outputs in:", output_dir, "\n")
-cat("Objects in your Environment: pools_long, pool_summary, beta_pairwise,",
-    "beta_consecutive, beta_multisite\n")
+cat("Objects in your Environment: pools_long, pool_summary, beta_spatial,",
+    "beta_spatial_trend, beta_consecutive\n")
