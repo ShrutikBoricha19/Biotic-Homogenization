@@ -7,7 +7,15 @@
 #
 #   - Stages (current)          Zanclean ... Chibanian
 #   - NALMA                     Blancan (4.7-1.8 Ma) / Irvingtonian (1.8-0.129 Ma)
-#   - Equal width               bins of 0.5, 0.75 and 1 Myr
+#   - Epochs                    Pliocene / Early Pleistocene / Middle Pleistocene
+#   - Magnetic chrons           Gilbert / Gauss / Matuyama / Brunhes
+#   - Merged stages             every way of joining neighbouring stages
+#                               (e.g. Zanc+Piac / Gela+Cala / Chib)
+#   - Equal width               standard intervals of 250, 400, 500, 600, 750 and
+#                               800 kyr and 1, 1.25 and 1.5 Myr, either aligned to
+#                               round ages (e.g. 4.5, 4.0, 3.5 ... Ma, as the
+#                               500-kyr bins of Rowan et al. 2024) or counted
+#                               from 4.7 Ma
 #   - Equal count               boundaries at quantiles of the site midpoints,
 #                               so every bin holds about the same number of sites
 #   - Optimized                 boundaries chosen to make the SMALLEST
@@ -20,7 +28,9 @@
 # 'min_sites_ok' sites (too few for Step 7), and how evenly sites are spread
 # (evenness 0-1, 1 = all bins equal). The recommended scheme is the one with
 # at least 'min_bins' bins that has the fewest thin cells, then the largest
-# minimum, then the highest evenness.
+# minimum, then the highest evenness. The best scheme built from standard
+# intervals only (no equal-count or optimized bins) is reported as well; set
+# 'recommend_standard_only' to TRUE to recommend it.
 #
 # Note: many sites share the same midpoint (e.g. sites dated only to a NALMA
 # or a magnetochron). A boundary cannot split sites with the same midpoint,
@@ -77,7 +87,11 @@ age_young <- 0.129
 stage_bounds <- c(4.700, 3.600, 2.580, 1.800, 0.7741, 0.129)
 stage_names  <- c("Zanclean", "Piacenzian", "Gelasian", "Calabrian", "Chibanian")
 
-equal_widths   <- c(0.5, 0.75, 1.0)  # Myr
+equal_widths   <- c(0.25, 0.4, 0.5, 0.6, 0.75, 0.8, 1.0, 1.25, 1.5)   # Myr (0.5 = 500 kyr)
+width_anchors  <- c("round", "start")   # "round": boundaries at round ages (0.5, 1.0, 1.5 ... Ma,
+                                        #   as in Rowan et al. 2024); "start": counted from 4.7 Ma
+recommend_standard_only <- FALSE        # TRUE: recommend only standard intervals (stages, merged
+                                        #   stages, epochs, chrons, NALMA, equal-width bins)
 bin_numbers    <- 3:6                # bins tried for equal-count and optimized schemes
 min_bin_width  <- 0.3                # Myr; optimized and equal-count bins are at least this long
 min_sites_ok   <- 3                  # a province x bin needs at least this many sites (Step 7)
@@ -193,14 +207,51 @@ count_bins <- function(bounds) {
 
 cat("\n=== 2. BUILDING SCHEMES ===\n")
 
-schemes <- list()
-schemes[["Stages (current)"]] <- stage_bounds
-schemes[["NALMA (Blancan / Irvingtonian)"]] <- c(age_old, 1.8, age_young)
+schemes <- list(); family <- c()
+add_scheme <- function(name, bounds, fam) {
+  schemes[[name]] <<- sort(unique(round(bounds, 6)), decreasing = TRUE)
+  family[name] <<- fam
+}
+
+# Standard geological schemes.
+add_scheme("Stages (current)", stage_bounds, "Stages")
+add_scheme("Epochs: Pliocene / Early Pleistocene / Middle Pleistocene",
+           c(age_old, 2.58, 0.7741, age_young), "Epochs")
+add_scheme("Magnetic chrons: Gilbert / Gauss / Matuyama / Brunhes",
+           c(age_old, 3.596, 2.581, 0.773, age_young), "Magnetic chrons")
+add_scheme("NALMA (Blancan / Irvingtonian)", c(age_old, 1.8, age_young), "NALMA")
+
+# Every way of merging neighbouring stages (keeps the stage names meaningful).
+abbr <- substr(stage_names, 1, 4)
+inner <- stage_bounds[2:5]
+for (mask in 0:(2^4 - 2)) {                      # 2^4 - 1 = keep all = current stages
+  keep <- as.logical(bitwAnd(mask, 2^(0:3)))
+  b <- c(age_old, inner[keep], age_young)
+  grp <- cumsum(c(TRUE, keep))
+  lab <- paste(tapply(abbr, grp, paste, collapse = "+"), collapse = " / ")
+  add_scheme(paste("Merged stages:", lab), b, "Merged stages")
+}
+
+# Equal-width bins: aligned to round ages, or counted from 4.7 Ma. An edge bin
+# shorter than half the width is merged into its neighbour.
+merge_short_edges <- function(b, w) {
+  if (length(b) > 3 && b[1] - b[2] < w / 2) b <- b[-2]
+  n <- length(b)
+  if (n > 3 && b[n - 1] - b[n] < w / 2) b <- b[-(n - 1)]
+  b
+}
 for (w in equal_widths) {
-  b <- seq(age_old, age_young, by = -w)
-  if (age_old - b[length(b)] < age_old - age_young) b <- c(b, age_young)
-  if (b[length(b) - 1] - age_young < w / 2 && length(b) > 2) b <- b[-(length(b) - 1)]  # merge a short last bin
-  schemes[[sprintf("Equal width %s Myr", w)]] <- b
+  wl <- if (w < 1) sprintf("%g kyr", w * 1000) else sprintf("%g Myr", w)
+  if ("round" %in% width_anchors) {
+    inner_w <- round(seq(floor(age_old / w) * w, ceiling(age_young / w) * w, by = -w), 6)
+    b <- c(age_old, inner_w[inner_w < age_old & inner_w > age_young], age_young)
+    add_scheme(sprintf("%s bins (round ages)", wl), merge_short_edges(b, w), "Equal width")
+  }
+  if ("start" %in% width_anchors) {
+    b <- seq(age_old, age_young, by = -w)
+    if (b[length(b)] > age_young) b <- c(b, age_young)
+    add_scheme(sprintf("%s bins (from 4.7 Ma)", wl), merge_short_edges(b, w), "Equal width")
+  }
 }
 
 # Possible cut points: halfway between neighbouring distinct midpoints.
@@ -218,7 +269,7 @@ for (k in bin_numbers) {
   q <- quantile(sites$Midpoint_Ma, probs = rev(seq_len(k - 1) / k), names = FALSE)
   b <- c(age_old, vapply(q, function(x) cand[which.min(abs(cand - x))], numeric(1)), age_young)
   b <- unique(b)
-  schemes[[sprintf("Equal count, %d bins", k)]] <- b
+  add_scheme(sprintf("Equal count, %d bins", k), b, "Equal count")
 }
 
 # Optimized: dynamic programming over cut points, maximizing the smallest
@@ -252,7 +303,7 @@ best_dp <- function(k) {
 }
 for (k in bin_numbers) {
   b <- best_dp(k)
-  if (!is.null(b)) schemes[[sprintf("Optimized, %d bins", k)]] <- b
+  if (!is.null(b)) add_scheme(sprintf("Optimized, %d bins", k), b, "Optimized")
 }
 
 # =============================================================================
@@ -281,17 +332,34 @@ summary_tab <- counts %>%
             evenness = mean(tapply(n_sites, Province, evenness)),
             .groups = "drop") %>%
   mutate(evenness = round(evenness, 3),
+         Family = unname(family[Scheme]),
+         Standard = !Family %in% c("Equal count", "Optimized"),
          Eligible = n_bins >= min_bins) %>%
-  arrange(desc(Eligible), cells_below_ok, desc(min_sites), desc(evenness))
+  arrange(desc(Eligible), cells_below_ok, desc(min_sites), desc(evenness)) %>%
+  relocate(Family, .after = Scheme)
 
-best <- summary_tab$Scheme[summary_tab$Eligible][1]
+best_standard <- summary_tab$Scheme[summary_tab$Eligible & summary_tab$Standard][1]
+best_overall  <- summary_tab$Scheme[summary_tab$Eligible][1]
+best <- if (recommend_standard_only) best_standard else best_overall
 summary_tab <- mutate(summary_tab, Recommended = Scheme == best)
 save_csv(summary_tab, "scheme_summary")
-print(as.data.frame(select(summary_tab, Scheme, n_bins, min_sites, cells_below_ok, empty_cells,
-                           max_sites, evenness)), row.names = FALSE)
-cat(sprintf("\n  Recommended (>= %d bins, fewest cells with < %d sites, then largest minimum): %s\n",
-            min_bins, min_sites_ok, best))
-cat("  Boundaries (Ma):", summary_tab$boundaries_Ma[summary_tab$Scheme == best], "\n")
+
+cat(sprintf("  %d schemes tested. Top 15 (ranked: >= %d bins, fewest cells with < %d sites,\n",
+            nrow(summary_tab), min_bins, min_sites_ok))
+cat("  then largest minimum, then evenness; full table in scheme_summary.csv):\n")
+print(as.data.frame(head(select(summary_tab, Scheme, n_bins, min_sites, cells_below_ok,
+                                empty_cells, max_sites, evenness), 15)), row.names = FALSE)
+cat("\n  Best scheme in each family:\n")
+print(as.data.frame(summary_tab %>% filter(Eligible) %>% group_by(Family) %>% slice(1) %>% ungroup() %>%
+        select(Family, Scheme, n_bins, min_sites, cells_below_ok, evenness)), row.names = FALSE)
+for (nm in unique(c(best_overall, best_standard))) {
+  cat(sprintf("\n  %s: %s\n    Boundaries (Ma): %s\n",
+              if (identical(nm, best_overall) && identical(nm, best_standard)) "Best overall and best standard scheme"
+              else if (identical(nm, best_overall)) "Best overall" else "Best standard-interval scheme",
+              nm, summary_tab$boundaries_Ma[summary_tab$Scheme == nm]))
+}
+cat(sprintf("\n  Recommended (%s): %s\n",
+            if (recommend_standard_only) "standard intervals only" else "all schemes", best))
 
 save_csv(counts %>% distinct(Scheme, Bin, Older, Younger) %>% arrange(Scheme, Bin), "scheme_bins")
 
@@ -331,13 +399,17 @@ p_hist <- ggplot(distinct(sites, Province, Site, Midpoint_Ma), aes(Midpoint_Ma, 
 save_fig(p_hist, "midpoint_distribution", height = slide_h * 1.2)
 
 # 4b. Scheme comparison (current, NALMA, equal width 1 Myr, best of each family, recommended).
-show <- unique(c("Stages (current)", "NALMA (Blancan / Irvingtonian)",
-                 summary_tab$Scheme[grepl("^Equal width", summary_tab$Scheme)][1],
-                 summary_tab$Scheme[grepl("^Equal count", summary_tab$Scheme) & summary_tab$Eligible][1],
-                 summary_tab$Scheme[grepl("^Optimized", summary_tab$Scheme) & summary_tab$Eligible][1:2],
+first_of <- function(fam) summary_tab$Scheme[summary_tab$Family == fam & summary_tab$Eligible][1]
+show <- unique(c("Stages (current)",
+                 "Magnetic chrons: Gilbert / Gauss / Matuyama / Brunhes",
+                 first_of("Merged stages"),
+                 if ("500 kyr bins (round ages)" %in% names(schemes)) "500 kyr bins (round ages)",
+                 first_of("Equal width"),
+                 first_of("Optimized"),
                  best))
 show <- show[!is.na(show)]
-lab_of <- setNames(ifelse(show == best, paste0(show, "\n(recommended)"), show), show)
+wrap_lab <- function(x) gsub("(.{1,34})(\\s|$)", "\\1\n", x) %>% sub("\n$", "", .)
+lab_of <- setNames(ifelse(show == best, paste0(wrap_lab(show), "\n(recommended)"), wrap_lab(show)), show)
 cmp <- counts %>% filter(Scheme %in% show) %>%
   mutate(Scheme = factor(lab_of[Scheme], levels = lab_of),
          txt_col = ifelse(n_sites >= 40, "white", ink),
@@ -346,8 +418,10 @@ p_cmp <- ggplot(cmp) +
   geom_rect(aes(xmin = Younger, xmax = Older, ymin = 0, ymax = 1, fill = n_sites), colour = "white", linewidth = 1) +
   geom_rect(data = filter(cmp, flag), aes(xmin = Younger, xmax = Older, ymin = 0, ymax = 1),
             fill = NA, colour = "#e34948", linewidth = 0.9) +
-  geom_text(aes(x = (Older + Younger) / 2, y = 0.5, label = n_sites, colour = txt_col),
-            size = base_size / 4.6, fontface = "bold") +
+  geom_text(aes(x = (Older + Younger) / 2, y = 0.5, label = n_sites, colour = txt_col,
+                size = ifelse(Older - Younger < 0.6, base_size / 6.2, base_size / 4.6)),
+            fontface = "bold") +
+  scale_size_identity() +
   scale_colour_identity() +
   facet_grid(Scheme ~ Province, switch = "y") +
   scale_fill_gradientn(colours = c("#f4f4f2", "#cde2fb", "#6da7ec", "#256abf", "#0d366b"),
@@ -365,7 +439,7 @@ p_cmp <- ggplot(cmp) +
         strip.placement = "outside", panel.grid = element_blank(),
         panel.spacing.y = unit(0.35, "lines"), panel.spacing.x = unit(0.8, "lines"),
         legend.position = "right", axis.text.x = element_text(size = base_size * 0.6))
-save_fig(p_cmp, "scheme_comparison", height = slide_h * 1.15)
+save_fig(p_cmp, "scheme_comparison", height = slide_h * max(1.15, 0.2 * length(show) + 0.2))
 
 # 4c. The recommended scheme, as in the Step 7 sites-per-stage figure.
 bb <- counts %>% filter(Scheme == best) %>%
