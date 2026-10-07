@@ -1,21 +1,25 @@
 # =============================================================================
 # STEP 3b: WHICH TIME BINS GIVE THE BEST SPREAD OF SITES?
 #
-# The five geological stages leave some province x stage combinations with
-# 0-6 sites and others with 70+. This script keeps the MIDPOINT age of every
-# site (from Step 3c) and tests other ways of cutting time into bins:
+# For three physiographic provinces (Basin and Range, Coastal Plain, Great
+# Plains; assigned to every site in Step 3), this script keeps the MIDPOINT
+# age of every site (from Step 3c) and tests ways of cutting 4.00-0.0117 Ma
+# into time bins:
 #
-#   - Stages (current)          Zanclean ... Chibanian
-#   - NALMA                     Blancan (4.7-1.8 Ma) / Irvingtonian (1.8-0.129 Ma)
-#   - Epochs                    Pliocene / Early Pleistocene / Middle Pleistocene
-#   - Magnetic chrons           Gilbert / Gauss / Matuyama / Brunhes
+#   - 0.75-Myr bins (current)   the Step 3c bins, read from time_bins.csv
+#   - Geological stages         Zanclean (from 4 Ma), Piacenzian, Gelasian,
+#                               Calabrian, Chibanian, Late Pleistocene
 #   - Merged stages             every way of joining neighbouring stages
-#                               (e.g. Zanc+Piac / Gela+Cala / Chib)
+#                               (e.g. Zanc+Piac / Gela+Cala / Chib+Late)
+#   - Epochs                    Pliocene / Early / Middle / Late Pleistocene
+#   - Magnetic chrons           Gilbert / Gauss / Matuyama / Brunhes
+#   - NALMA                     Blancan / Irvingtonian / Rancholabrean
+#                               (boundaries 1.35 and 0.21 Ma, as in Step 1)
 #   - Equal width               standard intervals of 250, 400, 500, 600, 750 and
 #                               800 kyr and 1, 1.25 and 1.5 Myr, either aligned to
-#                               round ages (e.g. 4.5, 4.0, 3.5 ... Ma, as the
+#                               round ages (e.g. 4.0, 3.5, 3.0 ... Ma, as the
 #                               500-kyr bins of Rowan et al. 2024) or counted
-#                               from 4.7 Ma
+#                               from 4 Ma
 #   - Equal count               boundaries at quantiles of the site midpoints,
 #                               so every bin holds about the same number of sites
 #   - Optimized                 boundaries chosen to make the SMALLEST
@@ -39,10 +43,11 @@
 # Counting unit: distinct sites (database + site name) per province and bin,
 # as in the Step 7 sites-per-stage figure.
 #
-# Inputs:  Outputs/3_stages/site_index.csv (Step 3c)
-#          Outputs/maps/physiographic/site_physio_database.csv (Step 5)
-#          Outputs/6_matrices/all_records_final.csv (Step 6; to keep only
-#          sites that contribute species, as in Step 7)
+# Inputs:  Outputs/3_stages/site_index.csv (Step 3c; holds each site's
+#          midpoint age and its Physio_Province from Step 3)
+#          Outputs/3_stages/time_bins.csv (Step 3c; the current bins)
+#          Outputs/6_matrices/all_records_final.csv (Step 6; only used when
+#          only_sites_with_species = TRUE)
 # Outputs (Outputs/3b_bin_explorer/):
 #   midpoint_distribution.png/.pdf   where the site midpoints fall, per province
 #   scheme_comparison.png/.pdf       sites per province x bin for each scheme
@@ -51,7 +56,7 @@
 #   scheme_bins.csv                  bin boundaries of every scheme
 #   site_bin_assignments.csv         the bin of every site under every scheme
 #
-# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 3, 5 and 6.
+# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 3 and 3c.
 # Needs: dplyr, tidyr, ggplot2.
 # =============================================================================
 
@@ -72,25 +77,26 @@ library(ggplot2)
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
 site_index_file <- file.path("Outputs", "3_stages", "site_index.csv")
-physio_file     <- file.path("Outputs", "maps", "physiographic", "site_physio_database.csv")
+time_bins_file  <- file.path("Outputs", "3_stages", "time_bins.csv")
 records_file    <- file.path("Outputs", "6_matrices", "all_records_final.csv")
 output_dir      <- file.path(work_dir, "Outputs", "3b_bin_explorer")
 
-provinces <- c("Pacific Border", "Basin and Range", "Great Plains", "Coastal Plain")
-province_colours <- c("Pacific Border" = "#2a78d6", "Basin and Range" = "#eb6834",
-                      "Great Plains" = "#1baf7a", "Coastal Plain" = "#4a3aa7")
+# Physiographic provinces (names as in the Physio_Province column of Step 3).
+provinces <- c("Basin and Range", "Coastal Plain", "Great Plains")
+province_colours <- c("Basin and Range" = "#eb6834", "Coastal Plain" = "#4a3aa7",
+                      "Great Plains" = "#1baf7a")
 
-only_sites_with_species <- TRUE   # count only sites that have species in Step 6 (as Step 7)
+only_sites_with_species <- FALSE  # TRUE: count only sites that have species in Step 6 (as Step 7)
 
-age_old   <- 4.700                # study interval (Ma)
-age_young <- 0.129
-stage_bounds <- c(4.700, 3.600, 2.580, 1.800, 0.7741, 0.129)
-stage_names  <- c("Zanclean", "Piacenzian", "Gelasian", "Calabrian", "Chibanian")
+age_old   <- 4.000                # study interval (Ma), as the Step 3c bins
+age_young <- 0.0117
+stage_bounds <- c(4.000, 3.600, 2.580, 1.800, 0.7741, 0.129, 0.0117)
+stage_names  <- c("Zanclean", "Piacenzian", "Gelasian", "Calabrian", "Chibanian", "Late Pleistocene")
 
 equal_widths   <- c(0.25, 0.4, 0.5, 0.6, 0.75, 0.8, 1.0, 1.25, 1.5)   # Myr (0.5 = 500 kyr)
 width_anchors  <- c("round", "start")   # "round": boundaries at round ages (0.5, 1.0, 1.5 ... Ma,
-                                        #   as in Rowan et al. 2024); "start": counted from 4.7 Ma
-recommend_standard_only <- FALSE        # TRUE: recommend only standard intervals (stages, merged
+                                        #   as in Rowan et al. 2024); "start": counted from 4 Ma
+recommend_standard_only <- FALSE        # TRUE: recommend only standard intervals (current bins, stages, merged
                                         #   stages, epochs, chrons, NALMA, equal-width bins)
 bin_numbers    <- 3:6                # bins tried for equal-count and optimized schemes
 min_bin_width  <- 0.3                # Myr; optimized and equal-count bins are at least this long
@@ -164,19 +170,26 @@ fmt_ma <- function(x) formatC(x, format = "fg", digits = 3)
 
 cat("=== 1. READING SITES ===\n")
 site_index <- read_input(site_index_file)
-physio     <- read_input(physio_file)
+time_bins  <- read_input(time_bins_file)
+if (!"Physio_Province" %in% names(site_index)) {
+  stop("site_index.csv has no Physio_Province column. Run Step 3 (spatial binning) and then Step 3c.")
+}
+current_bounds <- sort(unique(as.numeric(c(time_bins$Older_Ma, time_bins$Younger_Ma))), decreasing = TRUE)
 
-prov <- physio %>%
-  transmute(Site_Key, Stage_Number, Province = trimws(US_Province)) %>%
-  mutate(Province = provinces[match(tolower(Province), tolower(provinces))]) %>%
-  filter(!is.na(Province)) %>%
-  distinct(Site_Key, Stage_Number, .keep_all = TRUE)
+found <- sort(unique(na.omit(trimws(site_index$Physio_Province))))
+missing <- provinces[!tolower(provinces) %in% tolower(found)]
+if (length(missing)) {
+  stop("No sites in: ", paste(missing, collapse = ", "),
+       "
+Provinces in site_index.csv: ", paste(found, collapse = "; "))
+}
 
 sites <- site_index %>%
   transmute(Database, SiteName = trimws(SiteName), Site_Key, Stage_Number,
+            Province = provinces[match(tolower(trimws(Physio_Province)), tolower(provinces))],
             Midpoint_Ma = suppressWarnings(as.numeric(Midpoint_Ma))) %>%
-  inner_join(prov, by = c("Site_Key", "Stage_Number")) %>%
-  filter(!is.na(Midpoint_Ma), Midpoint_Ma <= age_old, Midpoint_Ma >= age_young)
+  filter(!is.na(Province), !is.na(Midpoint_Ma), Midpoint_Ma <= age_old, Midpoint_Ma >= age_young) %>%
+  distinct(Site_Key, Stage_Number, .keep_all = TRUE)
 
 if (only_sites_with_species && file.exists(file.path(work_dir, records_file))) {
   rec_sites <- read_input(records_file) %>% distinct(Database, SiteName = trimws(SiteName))
@@ -184,14 +197,15 @@ if (only_sites_with_species && file.exists(file.path(work_dir, records_file))) {
 }
 sites <- mutate(sites, Site = paste(Database, SiteName, sep = " | "),
                 Province = factor(Province, levels = provinces))
-cat(sprintf("  %d site records (%d distinct sites) with a midpoint in the four provinces\n",
-            nrow(sites), n_distinct(sites$Site)))
+cat(sprintf("  %d site records (%d distinct sites) with a midpoint in the %d provinces\n",
+            nrow(sites), n_distinct(sites$Site), length(provinces)))
+print(as.data.frame(count(distinct(sites, Province, Site), Province, name = "sites")), row.names = FALSE)
 cat(sprintf("  %d distinct midpoint ages\n", n_distinct(sites$Midpoint_Ma)))
 
 # Sites per province for a set of boundaries (old -> young).
 count_bins <- function(bounds) {
   b <- sort(bounds, decreasing = TRUE)
-  # a midpoint equal to a boundary goes to the younger bin, as in Step 3
+  # a midpoint equal to a boundary goes to the younger bin, as in Step 3c
   bin <- findInterval(-sites$Midpoint_Ma, -b, left.open = FALSE, rightmost.closed = TRUE)
   bin[sites$Midpoint_Ma == age_young] <- length(b) - 1
   expand_grid(Province = factor(provinces, levels = provinces), Bin = seq_len(length(b) - 1)) %>%
@@ -213,26 +227,29 @@ add_scheme <- function(name, bounds, fam) {
   family[name] <<- fam
 }
 
-# Standard geological schemes.
-add_scheme("Stages (current)", stage_bounds, "Stages")
-add_scheme("Epochs: Pliocene / Early Pleistocene / Middle Pleistocene",
-           c(age_old, 2.58, 0.7741, age_young), "Epochs")
+# The current bins and standard geological schemes.
+current_name <- sprintf("%g-Myr bins (current, Step 3c)", round(median(-diff(current_bounds)), 3))
+add_scheme(current_name, current_bounds, "Current bins")
+add_scheme("Geological stages", stage_bounds, "Stages")
+add_scheme("Epochs: Pliocene / Early / Middle / Late Pleistocene",
+           c(age_old, 2.58, 0.7741, 0.129, age_young), "Epochs")
 add_scheme("Magnetic chrons: Gilbert / Gauss / Matuyama / Brunhes",
            c(age_old, 3.596, 2.581, 0.773, age_young), "Magnetic chrons")
-add_scheme("NALMA (Blancan / Irvingtonian)", c(age_old, 1.8, age_young), "NALMA")
+add_scheme("NALMA (Blancan / Irvingtonian / Rancholabrean)", c(age_old, 1.35, 0.21, age_young), "NALMA")
 
 # Every way of merging neighbouring stages (keeps the stage names meaningful).
 abbr <- substr(stage_names, 1, 4)
-inner <- stage_bounds[2:5]
-for (mask in 0:(2^4 - 2)) {                      # 2^4 - 1 = keep all = current stages
-  keep <- as.logical(bitwAnd(mask, 2^(0:3)))
+inner <- stage_bounds[-c(1, length(stage_bounds))]
+n_in <- length(inner)
+for (mask in 0:(2^n_in - 2)) {                   # 2^n - 1 = keep all = the stages themselves
+  keep <- as.logical(bitwAnd(mask, 2^(0:(n_in - 1))))
   b <- c(age_old, inner[keep], age_young)
   grp <- cumsum(c(TRUE, keep))
   lab <- paste(tapply(abbr, grp, paste, collapse = "+"), collapse = " / ")
   add_scheme(paste("Merged stages:", lab), b, "Merged stages")
 }
 
-# Equal-width bins: aligned to round ages, or counted from 4.7 Ma. An edge bin
+# Equal-width bins: aligned to round ages, or counted from age_old. An edge bin
 # shorter than half the width is merged into its neighbour.
 merge_short_edges <- function(b, w) {
   if (length(b) > 3 && b[1] - b[2] < w / 2) b <- b[-2]
@@ -250,7 +267,7 @@ for (w in equal_widths) {
   if ("start" %in% width_anchors) {
     b <- seq(age_old, age_young, by = -w)
     if (b[length(b)] > age_young) b <- c(b, age_young)
-    add_scheme(sprintf("%s bins (from 4.7 Ma)", wl), merge_short_edges(b, w), "Equal width")
+    add_scheme(sprintf("%s bins (from %g Ma)", wl, age_old), merge_short_edges(b, w), "Equal width")
   }
 }
 
@@ -381,9 +398,11 @@ cat("\n=== 4. FIGURES ===\n")
 # 4a. Where do the site midpoints fall?
 hist_w <- 0.05
 p_hist <- ggplot(distinct(sites, Province, Site, Midpoint_Ma), aes(Midpoint_Ma, fill = Province)) +
-  geom_vline(xintercept = stage_bounds[2:5], colour = ink_soft, linetype = "dashed", linewidth = 0.5) +
+  geom_vline(xintercept = current_bounds[-c(1, length(current_bounds))], colour = ink_soft,
+             linetype = "dashed", linewidth = 0.5) +
   geom_histogram(binwidth = hist_w, boundary = age_young, colour = "white", linewidth = 0.2) +
-  geom_text(data = data.frame(x = (stage_bounds[-1] + stage_bounds[-6]) / 2, lab = substr(stage_names, 1, 4)),
+  geom_text(data = data.frame(x = (current_bounds[-1] + current_bounds[-length(current_bounds)]) / 2,
+                              lab = seq_len(length(current_bounds) - 1)),
             aes(x = x, y = Inf, label = lab), inherit.aes = FALSE,
             vjust = 1.4, size = base_size / 4.6, colour = ink_soft) +
   facet_wrap(~ Province, ncol = 1, scales = "free_y") +
@@ -392,7 +411,7 @@ p_hist <- ggplot(distinct(sites, Province, Site, Midpoint_Ma), aes(Midpoint_Ma, 
   coord_cartesian(xlim = c(age_old, age_young)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.3)), breaks = scales::pretty_breaks(3)) +
   labs(title = "Where do the site ages fall?",
-       subtitle = sprintf("Number of sites per %.2f Myr of midpoint age; dashed lines = current stage boundaries", hist_w),
+       subtitle = sprintf("Number of sites per %.2f Myr of midpoint age; dashed lines and numbers = current Step 3c bins", hist_w),
        x = "Midpoint age (Ma)", y = "Sites",
        caption = "Tall single spikes = many sites with the same midpoint (e.g. dated only to a NALMA); a bin boundary cannot split them.") +
   theme_slide()
@@ -400,7 +419,8 @@ save_fig(p_hist, "midpoint_distribution", height = slide_h * 1.2)
 
 # 4b. Scheme comparison (current, NALMA, equal width 1 Myr, best of each family, recommended).
 first_of <- function(fam) summary_tab$Scheme[summary_tab$Family == fam & summary_tab$Eligible][1]
-show <- unique(c("Stages (current)",
+show <- unique(c(current_name,
+                 "Geological stages",
                  "Magnetic chrons: Gilbert / Gauss / Matuyama / Brunhes",
                  first_of("Merged stages"),
                  if ("500 kyr bins (round ages)" %in% names(schemes)) "500 kyr bins (round ages)",
@@ -419,7 +439,8 @@ p_cmp <- ggplot(cmp) +
   geom_rect(data = filter(cmp, flag), aes(xmin = Younger, xmax = Older, ymin = 0, ymax = 1),
             fill = NA, colour = "#e34948", linewidth = 0.9) +
   geom_text(aes(x = (Older + Younger) / 2, y = 0.5, label = n_sites, colour = txt_col,
-                size = ifelse(Older - Younger < 0.6, base_size / 6.2, base_size / 4.6)),
+                size = ifelse(Older - Younger < 0.6, base_size / 6.2, base_size / 4.6),
+                angle = ifelse(Older - Younger < 0.3, 90, 0)),   # narrow cells: label turned sideways
             fontface = "bold") +
   scale_size_identity() +
   scale_colour_identity() +
@@ -448,13 +469,13 @@ bb <- counts %>% filter(Scheme == best) %>%
 p_best <- ggplot(bb, aes(Label, n_sites, fill = Province)) +
   geom_col(width = 0.68) +
   geom_text(aes(label = n_sites), vjust = -0.4, size = base_size / 3.8, fontface = "bold", colour = ink) +
-  facet_wrap(~ Province, ncol = 2) +
+  facet_wrap(~ Province, ncol = length(provinces)) +
   scale_fill_manual(values = province_colours) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.18)), breaks = scales::pretty_breaks(4)) +
   labs(title = paste("Sites per time bin -", best),
        subtitle = paste("Bin boundaries (Ma):", summary_tab$boundaries_Ma[summary_tab$Scheme == best]),
        x = "Time bin (Ma)", y = "Number of sites",
-       caption = "Midpoint ages as in Step 3; a site whose midpoint falls on a boundary goes to the younger bin.") +
+       caption = "Midpoint ages as in Step 3c; a site whose midpoint falls on a boundary goes to the younger bin.") +
   theme_slide() +
   theme(axis.text.x = element_text(size = base_size * 0.6))
 save_fig(p_best, "best_scheme_sites", height = slide_h * 1.1)
