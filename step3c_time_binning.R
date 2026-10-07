@@ -509,7 +509,9 @@ use_excel <- save_excel && requireNamespace("writexl", quietly = TRUE)
 
 save_out <- function(df, name) {
   path <- file.path(output_dir, paste0(name, ".csv"))
-  write.csv(df, path, row.names = FALSE, na = "")
+  ok <- tryCatch({ write.csv(df, path, row.names = FALSE, na = ""); TRUE },
+                 error = function(e) FALSE, warning = function(w) FALSE)
+  if (!ok) stop("Could not overwrite ", path, "\n  Close it (e.g. in Excel) and run Step 3c again.")
   if (use_excel) writexl::write_xlsx(df, file.path(output_dir, paste0(name, ".xlsx")))
   cat(sprintf("  %-20s %7d rows -> %s\n", name, nrow(df), path))
 }
@@ -529,6 +531,8 @@ time_bins <- data.frame(Bin_Number = seq_len(n_bins), Bin_Name = stage_names, Bi
 save_out(time_bins, "time_bins")
 print(time_bins, row.names = FALSE)
 
+cat(sprintf("\n  site_index.csv now holds the spatial columns: %s\n",
+            paste(intersect(spatial_cols, names(site_index)), collapse = ", ")))
 cat("\n=== STEP 3c COMPLETE ===\n")
 cat("Objects in your Environment: faunmap_localities, faunmap_fauna, pbdb_occurrences,\n",
     "site_index, stage_summary, multi_stage_sites, excluded\n", sep = "")

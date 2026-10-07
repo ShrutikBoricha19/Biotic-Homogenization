@@ -171,11 +171,25 @@ fmt_ma <- function(x) formatC(x, format = "fg", digits = 3)
 cat("=== 1. READING SITES ===\n")
 site_index <- read_input(site_index_file)
 time_bins  <- read_input(time_bins_file)
+spatial_file <- file.path("Outputs", "3_spatial", "sites_spatial.csv")
+file_date <- function(f) format(file.mtime(file.path(work_dir, f)), "%Y-%m-%d %H:%M")
 if (!"Physio_Province" %in% names(site_index)) {
-  stop("site_index.csv has no Physio_Province column: it was written before the spatial step.\n",
-       "  File date: ", format(file.mtime(file.path(work_dir, site_index_file)), "%Y-%m-%d %H:%M"), "\n",
-       "  Run step3_spatial_binning.R (Step 3), then step3c_time_binning.R (Step 3c), then this script.\n",
-       "  (Do not use the old step3_stage_binning.R - delete it from your folder.)")
+  # site_index.csv is older than the spatial step (e.g. Step 3c could not
+  # overwrite it): take each site's province from Step 3's own site table.
+  if (!file.exists(file.path(work_dir, spatial_file))) {
+    stop("site_index.csv has no Physio_Province column and ", spatial_file, " does not exist:\n",
+         "  Step 3 (step3_spatial_binning.R) has not finished. Run it, then step3c_time_binning.R.")
+  }
+  cat(sprintf("  NOTE: site_index.csv (%s) predates the spatial step; provinces are taken from\n",
+              file_date(site_index_file)),
+      sprintf("        sites_spatial.csv (%s). Rerun Step 3c to bring site_index.csv up to date.\n",
+              file_date(spatial_file)), sep = "")
+  norm_key <- function(k) tolower(gsub("\\s+", " ", trimws(k)))
+  sp <- read_input(spatial_file)
+  sp <- sp[!duplicated(norm_key(sp$Site_Key)), ]
+  site_index$Physio_Province <- sp$Physio_Province[match(norm_key(site_index$Site_Key), norm_key(sp$Site_Key))]
+  cat(sprintf("        %d of %d sites matched to a province record\n",
+              sum(norm_key(site_index$Site_Key) %in% norm_key(sp$Site_Key)), nrow(site_index)))
 }
 current_bounds <- sort(unique(as.numeric(c(time_bins$Older_Ma, time_bins$Younger_Ma))), decreasing = TRUE)
 
