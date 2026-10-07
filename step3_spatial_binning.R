@@ -111,6 +111,7 @@ dataset_colours <- c("FAUNMAP Blancan" = "#E69F00", "FAUNMAP Irvingtonian" = "#0
 dataset_shapes  <- c("FAUNMAP Blancan" = 21, "FAUNMAP Irvingtonian" = 22,
                      "FAUNMAP Rancholabrean" = 24, "PBDB" = 23)
 point_size   <- 2.2
+site_fill    <- "#B2182B"    # all sites drawn alike, whatever their database
 unit_tints   <- c("#E9DDB9", "#CFE3C6", "#C8DCEC", "#DCD2EA", "#D2E9E2", "#F1D9C9")
 empty_fill   <- "grey95"     # units without sites
 no_data_fill <- "grey85"     # land without a layer (e.g. Mexico on physiographic maps)
@@ -804,13 +805,8 @@ for (lv in names(layers)) {
   label_xy <- cbind(st_drop_geometry(label_pts)[c("Number", "n_sites")], st_coordinates(label_pts))
 
   pts <- lv_sites %>% filter(!is.na(Latitude), !is.na(Longitude)) %>%
-    distinct(Dataset, Latitude, Longitude) %>%
+    distinct(Latitude, Longitude) %>%
     st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326) %>% st_transform(map_crs)
-  ds_n <- count(st_drop_geometry(pts), Dataset)
-  ds_labels <- setNames(sprintf("%s (%d)", names(dataset_colours),
-                                coalesce(ds_n$n[match(names(dataset_colours), ds_n$Dataset)], 0L)),
-                        names(dataset_colours))
-  pts$Dataset <- factor(pts$Dataset, levels = names(dataset_colours))
 
   p_map <- ggplot() +
     geom_sf(data = countries, fill = no_data_fill, colour = NA) +
@@ -820,10 +816,8 @@ for (lv in names(layers)) {
     p_map <- p_map + geom_sf(data = limit_line, colour = "grey25", linewidth = 0.4, linetype = "22")
   }
   p_map <- p_map +
-    geom_sf(data = pts, aes(fill = Dataset, shape = Dataset), colour = "grey15",
-            stroke = 0.3, size = point_size, alpha = 0.9) +
-    scale_fill_manual(values = dataset_colours, labels = ds_labels, name = NULL, drop = FALSE) +
-    scale_shape_manual(values = dataset_shapes, labels = ds_labels, name = NULL, drop = FALSE)
+    geom_sf(data = pts, shape = 21, fill = site_fill, colour = "white", stroke = 0.3,
+            size = point_size, alpha = 0.9)
   if (use_repel) {
     p_map <- p_map + ggrepel::geom_label_repel(
       data = label_xy, aes(x = X, y = Y, label = Number), size = 3, fontface = "bold",
@@ -842,7 +836,7 @@ for (lv in names(layers)) {
   p_map <- p_map +
     coord_sf(crs = map_crs, xlim = lims[c("xmin", "xmax")], ylim = lims[c("ymin", "ymax")], expand = FALSE) +
     labs(title = level_titles[[lv]],
-         subtitle = sprintf("%d FAUNMAP localities and PBDB collections in %d of %d units",
+         subtitle = sprintf("%d fossil sites in %d of %d units",
                             sum(!is.na(lv_sites$Unit_Number)), sum(key$n_sites > 0), nrow(key)),
          caption = caption, x = NULL, y = NULL) +
     guides(fill = guide_legend(override.aes = list(size = 4, alpha = 1), nrow = 1),

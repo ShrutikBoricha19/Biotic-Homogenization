@@ -6,12 +6,13 @@
 # Hawaii lies outside the map frame and Alaska is not drawn as a unit; sites
 # in Alaska, Hawaii and Canada north of 60 degrees N were removed in Step 3.
 # Every map has a numbered key beside it (unit number - name - number of sites).
+# Sites are drawn alike whatever their database (FAUNMAP or PBDB).
 #
 # Outputs (Outputs/4_maps/), each as .png (300 dpi) and .pdf:
 #   1_spatial/
-#     map_political    states and provinces          } sites coloured by
-#     map_division     physiographic divisions       } dataset (FAUNMAP
-#     map_province     physiographic provinces       } period / PBDB)
+#     map_political    states and provinces          } all sites of all
+#     map_division     physiographic divisions       } time bins
+#     map_province     physiographic provinces       }
 #   2_temporal/
 #     map_bin1 ... map_binN   one map per time bin on the physiographic
 #                             provinces, key with that bin's site counts
@@ -65,11 +66,8 @@ map_width  <- 16
 map_height <- 9
 map_dpi    <- 300
 
-dataset_colours <- c("FAUNMAP Blancan" = "#E69F00", "FAUNMAP Irvingtonian" = "#0072B2",
-                     "FAUNMAP Rancholabrean" = "#009E73", "PBDB" = "#CC79A7")
-dataset_shapes  <- c("FAUNMAP Blancan" = 21, "FAUNMAP Irvingtonian" = 22,
-                     "FAUNMAP Rancholabrean" = 24, "PBDB" = 23)
-database_shapes <- c(FAUNMAP = 21, PBDB = 23)
+# All sites are drawn alike, whatever their database (FAUNMAP or PBDB).
+site_fill  <- "#B2182B"
 point_size <- 2.2
 
 unit_tints    <- c("#E9DDB9", "#CFE3C6", "#C8DCEC", "#DCD2EA", "#D2E9E2", "#F1D9C9")   # spatial maps
@@ -237,8 +235,7 @@ sites <- site_index %>%
          Stage_Number = as.integer(Stage_Number)) %>%
   filter(!is.na(Latitude), !is.na(Longitude), !is.na(Stage_Number)) %>%
   mutate(Bin_Text = factor(time_bins$Bin_Text[match(Stage_Number, time_bins$Bin_Number)],
-                           levels = time_bins$Bin_Text),
-         Dataset = factor(Dataset, levels = names(dataset_colours)))
+                           levels = time_bins$Bin_Text))
 cat(sprintf("  %d site-bin records with coordinates (%d distinct sites) in %d time bins\n",
             nrow(sites), n_distinct(sites$Site_Key), n_bins))
 
@@ -366,18 +363,10 @@ base_caption <- function(lv) {
          if (lv != "political") " Mexico: no physiographic layer (grey)." else "")
 }
 
-# Points coloured by dataset (spatial and temporal maps).
-dataset_points <- function(pts, size = point_size) {
-  d <- st_drop_geometry(pts) %>% distinct(Site_Key, Dataset) %>% count(Dataset)
-  labels <- setNames(sprintf("%s (%d)", names(dataset_colours),
-                             coalesce(d$n[match(names(dataset_colours), d$Dataset)], 0L)), names(dataset_colours))
-  list(
-    geom_sf(data = pts, aes(fill = Dataset, shape = Dataset), colour = "grey15", stroke = 0.3,
-            size = size, alpha = 0.9),
-    scale_fill_manual(values = dataset_colours, labels = labels, name = NULL, drop = FALSE),
-    scale_shape_manual(values = dataset_shapes, labels = labels, name = NULL, drop = FALSE),
-    guides(fill = guide_legend(override.aes = list(size = 4, alpha = 1), nrow = 1),
-           shape = guide_legend(nrow = 1)))
+# Site points for the spatial and temporal maps: one colour for every site.
+site_points <- function(pts, size = point_size) {
+  list(geom_sf(data = pts, shape = 21, fill = site_fill, colour = "white", stroke = 0.3,
+               size = size, alpha = 0.9))
 }
 
 # =============================================================================
@@ -385,12 +374,12 @@ dataset_points <- function(pts, size = point_size) {
 # =============================================================================
 
 cat("\n=== 3. SPATIAL MAPS ===\n")
-spatial_pts <- sites_sf %>% distinct(Site_Key, Dataset, .keep_all = TRUE)
+spatial_pts <- sites_sf %>% distinct(Site_Key, .keep_all = TRUE)
 for (lv in c("political", "division", "province")) {
   n_in <- n_distinct(spatial_pts$Site_Key[!is.na(spatial_pts[[unit_cols[[lv]]]])])
-  p <- make_map(preps[[lv]], spatial_pts, dataset_points(spatial_pts),
+  p <- make_map(preps[[lv]], spatial_pts, site_points(spatial_pts),
                 title = level_titles[[lv]],
-                subtitle = sprintf("%d FAUNMAP localities and PBDB collections, all time bins (%s - %s Ma)",
+                subtitle = sprintf("%d fossil sites, all time bins (%s - %s Ma)",
                                    n_in, fmt_age(max(time_bins$Older_Ma)), fmt_age(min(time_bins$Younger_Ma))),
                 caption = base_caption(lv), key_title = key_titles[[lv]])
   save_map(p, file.path(output_dir, "1_spatial"), paste0("map_", lv))
@@ -403,7 +392,7 @@ for (lv in c("political", "division", "province")) {
 cat("\n=== 4. TEMPORAL MAPS ===\n")
 for (b in seq_len(n_bins)) {
   pts <- filter(sites_sf, Stage_Number == time_bins$Bin_Number[b])
-  p <- make_map(preps[[temporal_level]], pts, dataset_points(pts),
+  p <- make_map(preps[[temporal_level]], pts, site_points(pts),
                 title = time_bins$Bin_Text[b],
                 subtitle = sprintf("%d sites on the %s", n_distinct(pts$Site_Key),
                                    level_short[[temporal_level]]),
@@ -425,12 +414,12 @@ p_all <- ggplot() +
     geom_sf(data = tp$draw[tp$draw$Tint == t, ], fill = neutral_tints[t], colour = "grey55", linewidth = 0.15)) +
   geom_sf(data = countries, fill = NA, colour = "grey20", linewidth = 0.3)
 if (!is.null(limit_line)) p_all <- p_all + geom_sf(data = limit_line, colour = "grey30", linewidth = 0.3, linetype = "22")
-p_all <- p_all + dataset_points(sites_sf %>% distinct(Bin_Text, Site_Key, Dataset, .keep_all = TRUE), size = 1.4) +
+p_all <- p_all + site_points(sites_sf %>% distinct(Bin_Text, Site_Key, .keep_all = TRUE), size = 1.4) +
   facet_wrap(~ Bin_Text, ncol = ceiling(n_bins / 2), labeller = as_labeller(facet_labels)) +
   coord_sf(crs = map_crs, xlim = lims[c("xmin", "xmax")], ylim = lims[c("ymin", "ymax")], expand = FALSE) +
   labs(title = "Sites in each time bin",
-       subtitle = paste("FAUNMAP localities and PBDB collections on the", level_short[[temporal_level]]),
-       caption = base_caption(temporal_level)) +
+       subtitle = paste("Fossil sites on the", level_short[[temporal_level]]),
+       caption = sub(" Pale units hold no sites.", "", base_caption(temporal_level), fixed = TRUE)) +
   map_theme() +
   theme(strip.text = element_text(face = "bold", size = 12, hjust = 0, margin = margin(b = 4)),
         panel.spacing = unit(0.8, "lines"), plot.background = element_rect(fill = "white", colour = NA),
@@ -448,18 +437,12 @@ bin_counts <- st_drop_geometry(st_pts) %>% count(Bin_Text)
 bin_labels <- setNames(sprintf("%s: %d", names(bin_colours),
                                coalesce(bin_counts$n[match(names(bin_colours), bin_counts$Bin_Text)], 0L)),
                        names(bin_colours))
-db_counts <- st_drop_geometry(st_pts) %>% distinct(Site_Key, Database) %>% count(Database)
-db_labels <- setNames(sprintf("%s (%d)", names(database_shapes),
-                              coalesce(db_counts$n[match(names(database_shapes), db_counts$Database)], 0L)),
-                      names(database_shapes))
 bin_points <- list(
-  geom_sf(data = st_pts, aes(fill = Bin_Text, shape = Database), colour = "grey15", stroke = 0.25,
+  geom_sf(data = st_pts, aes(fill = Bin_Text), shape = 21, colour = "grey15", stroke = 0.25,
           size = point_size, alpha = 0.9),
   scale_fill_manual(values = bin_colours, labels = bin_labels, name = "Time bin (sites)", drop = FALSE),
-  scale_shape_manual(values = database_shapes, labels = db_labels, name = NULL),
-  guides(fill = guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1), ncol = 2, byrow = TRUE,
-                             title.position = "top", order = 1),
-         shape = guide_legend(override.aes = list(size = 4, fill = "grey60"), ncol = 1, order = 2)))
+  guides(fill = guide_legend(override.aes = list(size = 4, alpha = 1), ncol = 3, byrow = TRUE,
+                             title.position = "top")))
 
 for (lv in spatiotemporal_levels) {
   p <- make_map(preps[[lv]], st_pts, bin_points,
