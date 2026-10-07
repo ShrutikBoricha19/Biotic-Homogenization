@@ -5,8 +5,8 @@
 # from FAUNMAP and PBDB, and draws each matrix as a heatmap (PDF + PNG).
 #
 # Inputs:
-#   Outputs/1_linked/blancan_fauna.csv        FAUNMAP fauna with their site names
-#   Outputs/1_linked/irvingtonian_fauna.csv   (Step 1: Machine Number, Analysis
+#   Outputs/2b_clean/blancan_fauna.csv        FAUNMAP fauna with their site names
+#   Outputs/2b_clean/irvingtonian_fauna.csv   (Step 1, cleaned in Step 2b: Machine Number, Analysis
 #                                             Unit, SiteName_Linked, taxonomy)
 #   faunalf.csv (optional)                    only used to fill in a missing Order
 #                                             for a genus
@@ -89,8 +89,8 @@ write_xlsx <- function(x, path, ...) {
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-blancan_fauna_file      <- file.path("Outputs", "1_linked", "blancan_fauna.csv")
-irvingtonian_fauna_file <- file.path("Outputs", "1_linked", "irvingtonian_fauna.csv")
+blancan_fauna_file      <- file.path("Outputs", "2b_clean", "blancan_fauna.csv")        # Step 2b
+irvingtonian_fauna_file <- file.path("Outputs", "2b_clean", "irvingtonian_fauna.csv")   # Step 2b
 order_lookup_file       <- "faunalf.csv"   # optional: Order for genera lacking one
 faunmap_sites_file  <- file.path("Outputs", "3_stages", "faunmap_localities.csv")
 pbdb_file           <- file.path("Outputs", "3_stages", "pbdb_occurrences.csv")

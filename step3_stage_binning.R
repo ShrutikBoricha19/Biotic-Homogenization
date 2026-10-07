@@ -14,12 +14,12 @@
 # No five-fauna-per-site filter is applied.
 # Latitude/longitude are carried into every output.
 #
-# Inputs:
-#   FAUNMAP locality files (ages and coordinates)
-#   Outputs/1_linked/blancan_fauna.csv, irvingtonian_fauna.csv  (Step 1)
-#   Outputs/2_pbdb/pbdb_clean.csv                                (Step 2)
+# Inputs (all from Step 2b, which cleans the Step 1 and Step 2 outputs):
+#   Outputs/2b_clean/blancan_localities.csv, irvingtonian_localities.csv
+#   Outputs/2b_clean/blancan_fauna.csv, irvingtonian_fauna.csv
+#   Outputs/2b_clean/pbdb_clean.csv
 #
-# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 1 and 2.
+# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 1, 2 and 2b.
 # =============================================================================
 
 library(dplyr)
@@ -30,12 +30,13 @@ library(dplyr)
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-blancan_loc_file      <- "Blancan Localities Data (Updated).csv"
-irvingtonian_loc_file <- "Irvingtonian Localities Data (Updated).csv"
+# Cleaned files from Step 2b (Canada/USA/Mexico only; no marine mammals or bats).
+blancan_loc_file      <- file.path("Outputs", "2b_clean", "blancan_localities.csv")
+irvingtonian_loc_file <- file.path("Outputs", "2b_clean", "irvingtonian_localities.csv")
 
-blancan_fauna_file      <- file.path("Outputs", "1_linked", "blancan_fauna.csv")
-irvingtonian_fauna_file <- file.path("Outputs", "1_linked", "irvingtonian_fauna.csv")
-pbdb_file               <- file.path("Outputs", "2_pbdb", "pbdb_clean.csv")
+blancan_fauna_file      <- file.path("Outputs", "2b_clean", "blancan_fauna.csv")
+irvingtonian_fauna_file <- file.path("Outputs", "2b_clean", "irvingtonian_fauna.csv")
+pbdb_file               <- file.path("Outputs", "2b_clean", "pbdb_clean.csv")
 
 output_dir <- file.path(work_dir, "Outputs", "3_stages")
 
@@ -69,7 +70,7 @@ for (i in seq_along(needed)) {
 }
 
 if (!all(found)) {
-  stop("Some input files were not found. Run Steps 1 and 2 first, ",
+  stop("Some input files were not found. Run Steps 1, 2 and 2b first, ",
        "or fix the file names in SETTINGS.")
 }
 
