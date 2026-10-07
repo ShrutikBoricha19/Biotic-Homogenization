@@ -39,6 +39,7 @@
 #   site_index.csv, time_bins.csv             sites that still have records
 #   resolution_log.csv      every sp./cf. record: candidates and result
 #   removed_records.csv     records removed, with the reason
+#   emptied_sites.csv       sites left without any occurrence, and why
 #   resolution_summary.csv  counts per time bin
 #   resolution_summary.png/.pdf
 #
@@ -256,6 +257,25 @@ cat(sprintf("  FAUNMAP %d -> %d records | PBDB %d -> %d records | sites %d -> %d
             nrow(fauna), nrow(fauna_out), nrow(pbdb), nrow(pbdb_out),
             nrow(site_index), nrow(site_index_out)))
 
+# Sites left without any occurrence, and why. Sites that had no records even
+# before this step (e.g. a duplicate locality row) are listed separately.
+site_key <- function(d) paste(d$Site_Key, d$Stage_Number)
+had_records <- unique(c(site_key(fauna), site_key(pbdb)))
+why <- resolution_log %>% filter(Result == "removed") %>%
+  group_by(k = paste(Site_Key, Bin)) %>%
+  summarise(Records_removed = n(), Reason = paste(sort(unique(How)), collapse = " + "), .groups = "drop")
+emptied_sites <- site_index %>%
+  mutate(k = site_key(site_index)) %>%
+  filter(!k %in% kept_sites) %>%
+  left_join(why, by = "k") %>%
+  mutate(Reason = case_when(!k %in% had_records ~ "had no records before Step 3d",
+                            TRUE ~ Reason)) %>%
+  select(-k) %>%
+  arrange(as.integer(Stage_Number), Reason)
+cat(sprintf("  Sites left without any occurrence: %d (of %d)\n",
+            sum(emptied_sites$Reason != "had no records before Step 3d"), nrow(site_index)))
+print(as.data.frame(emptied_sites %>% count(Bin = as.integer(Stage_Number), Reason)), row.names = FALSE)
+
 resolution_summary <- occ %>%
   filter(Type != "above genus (unchanged)") %>%
   mutate(Result = case_when(Type == "determinate" ~ "determinate",
@@ -281,6 +301,7 @@ save_csv(site_index_out, "site_index")
 save_csv(time_bins, "time_bins")
 save_csv(resolution_log, "resolution_log")
 save_csv(removed_records, "removed_records")
+save_csv(emptied_sites, "emptied_sites")
 save_csv(resolution_summary, "resolution_summary")
 print(as.data.frame(resolution_summary), row.names = FALSE)
 
