@@ -79,9 +79,18 @@ nalma_tolerance <- 0.5    # Myr
 
 simplify_name <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 clean_text <- function(x) { x <- trimws(as.character(x)); x[x == ""] <- NA_character_; x }
-machine_key <- function(x) sub("^([0-9]+)\\.0+$", "\\1", clean_text(x))   # 1234.00 = 1234
-# Analysis Unit compared ignoring capitals and extra spaces ("Assemblage" = "assemblage ").
-analysis_key <- function(x) tolower(gsub("\\s+", " ", clean_text(x)))
+# Machine Number as a plain integer: "1234.00", "1,234.00", " 1234 " and 1234 all become "1234".
+machine_key <- function(x) {
+  x <- gsub("[,[:space:]]", "", clean_text(x))
+  v <- suppressWarnings(as.numeric(x))
+  ifelse(!is.na(v) & v == round(v), format(round(v), scientific = FALSE, trim = TRUE), x)
+}
+# Analysis Unit compared ignoring capitals, extra spaces and a "." typed for a ","
+# before a space ("CU 29.5. L6604" = "CU 29.5, L6604"; "Assemblage" = "assemblage ").
+analysis_key <- function(x) {
+  x <- tolower(gsub("\\s+", " ", clean_text(x)))
+  gsub("[.,;] ", ", ", x)
+}
 to_num <- function(x) suppressWarnings(as.numeric(clean_text(x)))
 to_coord <- function(x, limit) { v <- to_num(x); v[!is.na(v) & abs(v) > limit] <- NA; v }
 

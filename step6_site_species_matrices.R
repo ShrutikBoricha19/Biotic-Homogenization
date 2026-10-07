@@ -167,7 +167,18 @@ clean_text <- function(x) {
 }
 
 # 1234.00 and 1234 become the same key.
-machine_key <- function(x) sub("^([0-9]+)\\.0+$", "\\1", clean_text(x))
+# Machine Number as a plain integer: "1234.00", "1,234.00", " 1234 " and 1234 all become "1234".
+machine_key <- function(x) {
+  x <- gsub("[,[:space:]]", "", clean_text(x))
+  v <- suppressWarnings(as.numeric(x))
+  ifelse(!is.na(v) & v == round(v), format(round(v), scientific = FALSE, trim = TRUE), x)
+}
+# Analysis Unit compared ignoring capitals, extra spaces and a "." typed for a ","
+# before a space ("CU 29.5. L6604" = "CU 29.5, L6604"; "Assemblage" = "assemblage ").
+analysis_key <- function(x) {
+  x <- tolower(gsub("\\s+", " ", clean_text(x)))
+  gsub("[.,;] ", ", ", x)
+}
 
 # "RODENTIA" / "rodentia" -> "Rodentia"
 title_word <- function(x) {
@@ -260,7 +271,7 @@ site_lookup <- faunmap_sites_raw %>%
   transmute(
     .period = FAUNMAP_Period,
     .mk = Machine_Key,
-    .ak = clean_text(Analysis_Key),
+    .ak = analysis_key(Analysis_Key),
     SiteName = clean_text(SiteName_Std),
     .nk = name_key(SiteName_Std),
     Latitude = suppressWarnings(as.numeric(Latitude)),
@@ -274,7 +285,7 @@ faunmap_records <- faunmap_fauna_raw %>%
   mutate(
     .rec = row_number(),
     .mk = machine_key(.data[[f_machine]]),
-    .ak = clean_text(.data[[f_analysis]]),
+    .ak = analysis_key(.data[[f_analysis]]),
     Fauna_SiteName = if (!is.na(f_site)) clean_text(.data[[f_site]]) else NA_character_,
     .nk = name_key(Fauna_SiteName),
     Genus = title_word(.data[[f_genus]]),
