@@ -129,6 +129,29 @@ polygons_only <- function(x) {
   st_cast(x, "MULTIPOLYGON", warn = FALSE)
 }
 
+# Repair invalid polygons (simplified outlines can cross themselves, which makes
+# GEOS stop with "TopologyException: side location conflict").
+repair_geom <- function(x) {
+  x <- suppressWarnings(suppressMessages(polygons_only(st_make_valid(x))))
+  bad <- !st_is_valid(x)
+  if (any(bad, na.rm = TRUE)) {
+    st_geometry(x)[which(bad)] <- suppressWarnings(st_buffer(st_geometry(x)[which(bad)], 0))
+    x <- suppressWarnings(suppressMessages(polygons_only(st_make_valid(x))))
+  }
+  x[!st_is_empty(x), ]
+}
+# Run a geometry step; if GEOS fails, repair the input (zero buffer, then a
+# 1-m precision grid) and try again.
+geom_retry <- function(f, x) {
+  tryCatch(f(x), error = function(e) {
+    x2 <- repair_geom(suppressWarnings(st_buffer(repair_geom(x), 0)))
+    tryCatch(f(x2), error = function(e2) {
+      x3 <- repair_geom(st_set_precision(x2, 1))
+      f(x3)
+    })
+  })
+}
+
 fmt_age <- function(x) ifelse(x < 0.1, sprintf("%.4f", x), sprintf("%.2f", x))   # 4.00, 0.0117
 
 save_map <- function(p, dir, name, width = map_width, height = map_height) {
@@ -201,6 +224,9 @@ time_bins  <- read_text_csv(time_bins_file)
 layers_path <- file.path(work_dir, layers_file)
 if (!file.exists(layers_path)) stop("File not found:\n  ", layers_path, "\nRun Step 3 (spatial binning) again.")
 layers <- readRDS(layers_path)
+for (nm in setdiff(names(layers), "settings")) {
+  if (!is.null(layers[[nm]])) layers[[nm]] <- repair_geom(layers[[nm]])
+}
 work_crs <- layers$settings$work_crs
 canada_north_limit <- layers$settings$canada_north_limit
 
@@ -271,11 +297,17 @@ use_repel <- requireNamespace("ggrepel", quietly = TRUE)
 # Units of one level: merged by name across countries, numbered under headings
 # (country, or parent division for provinces), with label positions.
 prepare_level <- function(lv) {
-  polys <- suppressWarnings(suppressMessages(
-    layers[[lv]] %>% group_by(Unit) %>%
-      summarise(Countries = paste(intersect(country_order, unique(Country)), collapse = ", "),
-                .groups = "drop") %>%
-      polygons_only()))
+  merge_units <- function(x, union = TRUE) {
+    suppressWarnings(suppressMessages(
+      x %>% group_by(Unit) %>%
+        summarise(Countries = paste(intersect(country_order, unique(Country)), collapse = ", "),
+                  .groups = "drop", do_union = union) %>%
+        polygons_only()))
+  }
+  # If dissolving still fails, the pieces of a unit are kept side by side (same look).
+  polys <- tryCatch(geom_retry(merge_units, layers[[lv]]),
+                    error = function(e) merge_units(layers[[lv]], union = FALSE))
+  polys <- repair_geom(polys)
   polys <- polys[lengths(st_intersects(polys, study_area_work)) > 0 | polys$Unit %in% sites[[unit_cols[[lv]]]], ]
 
   if (lv == "province") {
@@ -284,7 +316,9 @@ prepare_level <- function(lv) {
       polys %>% st_set_agr("constant") %>% st_cast("POLYGON", warn = FALSE) %>%
         mutate(area = as.numeric(st_area(.))) %>% group_by(Unit) %>%
         slice_max(area, n = 1, with_ties = FALSE) %>% ungroup() %>%
-        st_set_agr("constant") %>% st_point_on_surface()))
+        st_set_agr("constant")))
+    pts <- tryCatch(suppressWarnings(st_point_on_surface(pts)),
+                    error = function(e) suppressWarnings(st_centroid(pts)))
     near <- st_nearest_feature(pts, parent_layer)
     polys$Group <- parent_layer$Unit[near][match(polys$Unit, pts$Unit)]
     first_country <- tapply(match(sub(",.*", "", polys$Countries), country_order), polys$Group, min)
@@ -308,11 +342,18 @@ prepare_level <- function(lv) {
   }
   draw$Tint <- tint
 
-  label_pts <- suppressWarnings(suppressMessages(
-    draw %>% select(Number) %>% st_set_agr("constant") %>% st_intersection(study_area_map) %>%
-      st_cast("POLYGON", warn = FALSE) %>% mutate(area = as.numeric(st_area(.))) %>%
+  draw <- repair_geom(draw)
+  # Label inside the largest piece of each unit within the study area.
+  clip <- function(x) suppressWarnings(suppressMessages(
+    x %>% select(Number) %>% st_set_agr("constant") %>% st_intersection(study_area_map)))
+  pieces <- tryCatch(geom_retry(clip, draw), error = function(e) select(draw, Number))
+  pieces <- suppressWarnings(suppressMessages(
+    pieces %>% st_set_agr("constant") %>% st_cast("POLYGON", warn = FALSE) %>%
+      mutate(area = as.numeric(st_area(.))) %>%
       group_by(Number) %>% slice_max(area, n = 1, with_ties = FALSE) %>% ungroup() %>%
-      st_set_agr("constant") %>% st_point_on_surface()))
+      st_set_agr("constant")))
+  label_pts <- tryCatch(suppressWarnings(st_point_on_surface(pieces)),
+                        error = function(e) suppressWarnings(st_centroid(pieces)))
   label_xy <- cbind(st_drop_geometry(label_pts)["Number"], st_coordinates(label_pts))
   cat(sprintf("  %-10s %3d units\n", lv, nrow(key)))
   list(level = lv, draw = draw, key = key, label_xy = label_xy)

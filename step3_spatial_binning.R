@@ -460,7 +460,10 @@ map_layers <- lapply(c(layers, list(us_division = us_units$division, ca_division
                      function(l) {
                        if (is.null(l)) return(NULL)
                        l <- l[!l$Unit %in% c("Alaska", "Hawaii"), ]
-                       suppressWarnings(st_simplify(l, dTolerance = 500, preserveTopology = TRUE))
+                       l <- suppressWarnings(st_simplify(l, dTolerance = 500, preserveTopology = TRUE))
+                       # simplified outlines can cross themselves: repair them
+                       l <- suppressWarnings(suppressMessages(polygons_only(st_make_valid(l))))
+                       l[!st_is_empty(l), ]
                      })
 map_layers$settings <- list(work_crs = work_crs, canada_north_limit = canada_north_limit,
                             remove_alaska = remove_alaska, remove_hawaii = remove_hawaii)
