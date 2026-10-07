@@ -30,6 +30,7 @@
 #       US_Section, ...). Step 3c (time binning) reads these.
 #   sites_spatial.csv      one row per site with all spatial units
 #   excluded_sites.csv     removed sites and why
+#   spatial_layers.rds     simplified spatial layers, used by the Step 4 maps
 #   <level>/sites_<level>.csv          site -> unit, with the unit number
 #   <level>/unit_summary_<level>.csv   sites, records and taxa per unit
 #   <level>/map_<level>.png / .pdf     map with a numbered key (no Hawaii)
@@ -451,6 +452,19 @@ layers <- list(
   division  = rbind(us_units$division, ca_units$division),
   province  = rbind(us_units$province, ca_units$province)
 )
+
+# Simplified copies of the layers (without Alaska and Hawaii) for the Step 4 maps.
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+map_layers <- lapply(c(layers, list(us_division = us_units$division, ca_division = ca_units$division)),
+                     function(l) {
+                       if (is.null(l)) return(NULL)
+                       l <- l[!l$Unit %in% c("Alaska", "Hawaii"), ]
+                       suppressWarnings(st_simplify(l, dTolerance = 500, preserveTopology = TRUE))
+                     })
+map_layers$settings <- list(work_crs = work_crs, canada_north_limit = canada_north_limit,
+                            remove_alaska = remove_alaska, remove_hawaii = remove_hawaii)
+saveRDS(map_layers, file.path(output_dir, "spatial_layers.rds"))
+cat("  Map layers saved for Step 4:", file.path(output_dir, "spatial_layers.rds"), "\n")
 
 # =============================================================================
 # 3. ASSIGN EVERY SITE COORDINATE TO ITS UNITS
