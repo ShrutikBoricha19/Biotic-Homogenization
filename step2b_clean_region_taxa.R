@@ -26,14 +26,14 @@
 #      includes FAUNMAP localities that never had fauna records).
 #
 # Inputs:
-#   Blancan / Irvingtonian locality files (as in Steps 1 and 2)
-#   Outputs/1_linked/blancan_fauna.csv, irvingtonian_fauna.csv   (Step 1)
+#   Outputs/1_linked/<period>_localities.csv and <period>_fauna.csv   (Step 1;
+#   period = blancan, irvingtonian, rancholabrean)
 #   Outputs/2_pbdb/pbdb_clean.csv                                 (Step 2)
 #   faunalf.csv (optional, to fill a missing Order by genus)
 #
 # Outputs (Outputs/2b_clean/) - same columns as the input files:
-#   blancan_localities.csv, irvingtonian_localities.csv   used by Step 3
-#   blancan_fauna.csv, irvingtonian_fauna.csv             used by Steps 3 and 6
+#   <period>_localities.csv   used by Step 3
+#   <period>_fauna.csv        used by Steps 3 and 6
 #   pbdb_clean.csv                                        used by Step 3
 #   removed_sites.csv     every removed locality/collection and why
 #   removed_records.csv   every removed occurrence and why
@@ -58,10 +58,9 @@ library(sf)
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-blancan_loc_file        <- "Blancan Localities Data (Updated).csv"
-irvingtonian_loc_file   <- "Irvingtonian Localities Data (Updated).csv"
-blancan_fauna_file      <- file.path("Outputs", "1_linked", "blancan_fauna.csv")
-irvingtonian_fauna_file <- file.path("Outputs", "1_linked", "irvingtonian_fauna.csv")
+periods <- c("Blancan", "Irvingtonian", "Rancholabrean")
+loc_files   <- setNames(file.path("Outputs", "1_linked", paste0(tolower(periods), "_localities.csv")), periods)
+fauna_files <- setNames(file.path("Outputs", "1_linked", paste0(tolower(periods), "_fauna.csv")), periods)
 pbdb_file               <- file.path("Outputs", "2_pbdb", "pbdb_clean.csv")
 order_lookup_file       <- "faunalf.csv"    # optional
 
@@ -164,8 +163,8 @@ site_opts    <- c("sitename", "collectionname")
 # =============================================================================
 
 cat("=== 1. READING FILES ===\n")
-loc_raw <- list(Blancan = read_input(blancan_loc_file), Irvingtonian = read_input(irvingtonian_loc_file))
-fauna_raw <- list(Blancan = read_input(blancan_fauna_file), Irvingtonian = read_input(irvingtonian_fauna_file))
+loc_raw   <- lapply(loc_files, read_input)
+fauna_raw <- lapply(fauna_files, read_input)
 pbdb_raw <- read_input(pbdb_file)
 order_lookup_raw <- read_input(order_lookup_file, required = FALSE)
 
@@ -414,10 +413,10 @@ summary_rows[[length(summary_rows) + 1]] <- data.frame(
 # =============================================================================
 
 cat("\n=== 5. SAVING ===\n")
-save_csv(clean_loc[["Blancan"]], "blancan_localities")
-save_csv(clean_loc[["Irvingtonian"]], "irvingtonian_localities")
-save_csv(clean_fauna[["Blancan"]], "blancan_fauna")
-save_csv(clean_fauna[["Irvingtonian"]], "irvingtonian_fauna")
+for (p in periods) {
+  save_csv(clean_loc[[p]], paste0(tolower(p), "_localities"))
+  save_csv(clean_fauna[[p]], paste0(tolower(p), "_fauna"))
+}
 save_csv(kept_P %>% select(-starts_with(".")), "pbdb_clean")
 
 removed_records <- bind_rows(removed_records)

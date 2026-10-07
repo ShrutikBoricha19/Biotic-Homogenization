@@ -9,11 +9,11 @@
 #   3. it lies within `duplicate_km` of a FAUNMAP locality
 #
 # Every occurrence (faunal record) of a duplicate collection is removed.
-# All FAUNMAP Blancan + Irvingtonian localities are used as the reference.
+# The FAUNMAP Blancan, Irvingtonian and Rancholabrean localities kept by
+# Step 1 (those with a proper age) are used as the reference.
 # No five-fauna-per-site filter is applied.
 #
-# Run the whole file (Ctrl+Shift+S in RStudio). Step 1 does not need to be
-# run first; this step only uses the PBDB file and the two locality files.
+# Run the whole file (Ctrl+Shift+S in RStudio) after Step 1.
 # =============================================================================
 
 library(dplyr)
@@ -25,8 +25,12 @@ library(dplyr)
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
 pbdb_file             <- "PBDB_Genus - Species - CAN_MEX_USA.csv"
-blancan_loc_file      <- "Blancan Localities Data (Updated).csv"
-irvingtonian_loc_file <- "Irvingtonian Localities Data (Updated).csv"
+# FAUNMAP localities kept by Step 1 (those with a proper age).
+loc_files <- c(
+  Blancan       = file.path("Outputs", "1_linked", "blancan_localities.csv"),
+  Irvingtonian  = file.path("Outputs", "1_linked", "irvingtonian_localities.csv"),
+  Rancholabrean = file.path("Outputs", "1_linked", "rancholabrean_localities.csv")
+)
 
 duplicate_km <- 5     # PBDB collections this close to a FAUNMAP locality are removed
 
@@ -42,7 +46,7 @@ if (!dir.exists(work_dir)) {
   stop("The folder does not exist:\n  ", work_dir)
 }
 
-needed <- c(pbdb_file, blancan_loc_file, irvingtonian_loc_file)
+needed <- c(pbdb_file, unname(loc_files))
 found <- file.exists(file.path(work_dir, needed))
 
 for (i in seq_along(needed)) {
@@ -53,7 +57,7 @@ if (!all(found)) {
   cat("\nCSV files actually present in the folder:\n")
   cat(paste0("  ", list.files(work_dir, pattern = "\\.csv$", ignore.case = TRUE)),
       sep = "\n")
-  stop("Some input files were not found. Fix the file names in SETTINGS.")
+  stop("Some input files were not found. Run Step 1 first, or fix the file names in SETTINGS.")
 }
 
 # =============================================================================
@@ -95,8 +99,7 @@ read_input <- function(file, header_word = NULL) {
 }
 
 pbdb_raw             <- read_input(pbdb_file, header_word = "collection_name")
-blancan_loc_raw      <- read_input(blancan_loc_file)
-irvingtonian_loc_raw <- read_input(irvingtonian_loc_file)
+loc_raw <- lapply(loc_files, read_input)
 
 # =============================================================================
 # 3. FIND THE COLUMNS WE NEED IN EACH FILE
@@ -139,8 +142,8 @@ show_cols <- function(df, file) {
 }
 
 pbdb_cols             <- show_cols(pbdb_raw, pbdb_file)
-blancan_loc_cols      <- show_cols(blancan_loc_raw, blancan_loc_file)
-irvingtonian_loc_cols <- show_cols(irvingtonian_loc_raw, irvingtonian_loc_file)
+loc_cols <- lapply(names(loc_files), function(p) show_cols(loc_raw[[p]], loc_files[[p]]))
+names(loc_cols) <- names(loc_files)
 
 # =============================================================================
 # 4. PREPARE FAUNMAP REFERENCE LOCALITIES AND PBDB COLLECTIONS
@@ -173,10 +176,9 @@ prepare_faunmap <- function(df, cols, period) {
   )
 }
 
-faunmap_sites <- bind_rows(
-  prepare_faunmap(blancan_loc_raw, blancan_loc_cols, "Blancan"),
-  prepare_faunmap(irvingtonian_loc_raw, irvingtonian_loc_cols, "Irvingtonian")
-) %>%
+faunmap_sites <- bind_rows(lapply(names(loc_files), function(p) {
+  prepare_faunmap(loc_raw[[p]], loc_cols[[p]], p)
+})) %>%
   distinct()
 
 faunmap_coords <- filter(faunmap_sites, !is.na(Latitude), !is.na(Longitude))

@@ -23,8 +23,8 @@
 # Latitude/longitude are carried into every output.
 #
 # Inputs (all from Step 2b, which cleans the Step 1 and Step 2 outputs):
-#   Outputs/2b_clean/blancan_localities.csv, irvingtonian_localities.csv
-#   Outputs/2b_clean/blancan_fauna.csv, irvingtonian_fauna.csv
+#   Outputs/2b_clean/<period>_localities.csv and <period>_fauna.csv
+#   (period = blancan, irvingtonian, rancholabrean)
 #   Outputs/2b_clean/pbdb_clean.csv
 #
 # Run the whole file (Ctrl+Shift+S in RStudio) after Steps 1, 2 and 2b.
@@ -45,11 +45,10 @@ library(dplyr)
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
 # Cleaned files from Step 2b (Canada/USA/Mexico only; no marine mammals or bats).
-blancan_loc_file      <- file.path("Outputs", "2b_clean", "blancan_localities.csv")
-irvingtonian_loc_file <- file.path("Outputs", "2b_clean", "irvingtonian_localities.csv")
+periods <- c("Blancan", "Irvingtonian", "Rancholabrean")
+loc_files   <- setNames(file.path("Outputs", "2b_clean", paste0(tolower(periods), "_localities.csv")), periods)
+fauna_files <- setNames(file.path("Outputs", "2b_clean", paste0(tolower(periods), "_fauna.csv")), periods)
 
-blancan_fauna_file      <- file.path("Outputs", "2b_clean", "blancan_fauna.csv")
-irvingtonian_fauna_file <- file.path("Outputs", "2b_clean", "irvingtonian_fauna.csv")
 pbdb_file               <- file.path("Outputs", "2b_clean", "pbdb_clean.csv")
 
 output_dir <- file.path(work_dir, "Outputs", "3_stages")
@@ -92,8 +91,7 @@ if (!dir.exists(work_dir)) {
   stop("The folder does not exist:\n  ", work_dir)
 }
 
-needed <- c(blancan_loc_file, irvingtonian_loc_file,
-            blancan_fauna_file, irvingtonian_fauna_file, pbdb_file)
+needed <- c(unname(loc_files), unname(fauna_files), pbdb_file)
 found <- file.exists(file.path(work_dir, needed))
 
 for (i in seq_along(needed)) {
@@ -127,10 +125,8 @@ read_input <- function(file) {
   df
 }
 
-blancan_loc_raw        <- read_input(blancan_loc_file)
-irvingtonian_loc_raw   <- read_input(irvingtonian_loc_file)
-blancan_fauna_raw      <- read_input(blancan_fauna_file)
-irvingtonian_fauna_raw <- read_input(irvingtonian_fauna_file)
+loc_raw   <- lapply(loc_files, read_input)
+fauna_raw <- lapply(fauna_files, read_input)
 pbdb_raw               <- read_input(pbdb_file)
 
 # =============================================================================
@@ -179,10 +175,9 @@ show_cols <- function(df, file, fields) {
 
 loc_fields <- c("machine", "analysis", "site", "lat", "lon", "max_age", "min_age")
 
-blancan_loc_cols        <- show_cols(blancan_loc_raw, blancan_loc_file, loc_fields)
-irvingtonian_loc_cols   <- show_cols(irvingtonian_loc_raw, irvingtonian_loc_file, loc_fields)
-blancan_fauna_cols      <- show_cols(blancan_fauna_raw, blancan_fauna_file, c("machine", "analysis"))
-irvingtonian_fauna_cols <- show_cols(irvingtonian_fauna_raw, irvingtonian_fauna_file, c("machine", "analysis"))
+loc_cols   <- setNames(lapply(periods, function(p) show_cols(loc_raw[[p]], loc_files[[p]], loc_fields)), periods)
+fauna_cols <- setNames(lapply(periods, function(p) show_cols(fauna_raw[[p]], fauna_files[[p]],
+                                                             c("machine", "analysis"))), periods)
 pbdb_cols               <- show_cols(pbdb_raw, pbdb_file, c("site", "lat", "lon", "max_age", "min_age"))
 
 # =============================================================================
@@ -319,8 +314,7 @@ prepare_localities <- function(df, cols, period) {
 }
 
 localities_all <- bind_rows(
-  prepare_localities(blancan_loc_raw, blancan_loc_cols, "Blancan"),
-  prepare_localities(irvingtonian_loc_raw, irvingtonian_loc_cols, "Irvingtonian")
+  lapply(periods, function(p) prepare_localities(loc_raw[[p]], loc_cols[[p]], p))
 )
 
 # Geographic exclusions override the stage: such localities get no stage.
@@ -334,7 +328,7 @@ cat(sprintf("  Localities removed: %d in Alaska, %d in Canada north of %s degree
 
 faunmap_localities <- filter(localities_all, !is.na(Stage_Number))
 
-for (p in c("Blancan", "Irvingtonian")) {
+for (p in periods) {
   cat(sprintf("  %-13s %6d locality rows | %6d with a stage | %6d without\n", p,
               sum(localities_all$FAUNMAP_Period == p),
               sum(faunmap_localities$FAUNMAP_Period == p),
@@ -408,8 +402,7 @@ link_stage <- function(fauna, cols, period) {
 }
 
 fauna_all <- bind_rows(
-  link_stage(blancan_fauna_raw, blancan_fauna_cols, "Blancan"),
-  link_stage(irvingtonian_fauna_raw, irvingtonian_fauna_cols, "Irvingtonian")
+  lapply(periods, function(p) link_stage(fauna_raw[[p]], fauna_cols[[p]], p))
 ) %>%
   mutate(Latitude = to_num(Latitude), Longitude = to_num(Longitude))
 

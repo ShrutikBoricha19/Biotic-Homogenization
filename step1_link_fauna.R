@@ -1,19 +1,37 @@
 # =============================================================================
-# STEP 1: LINK FAUNMAP FAUNA TO THEIR LOCALITIES
+# STEP 1: FAUNMAP LOCALITIES AND THEIR FAUNA
 #
-# Each fauna record is matched to its locality using the pair
+# Localities: the three FAUNMAP site workbooks
+#   Blancan_Sites.xlsx, Irvingtonian_Sites.xlsx, Rancholabrean_Sites.xlsx
+# Fauna: faunalf.csv, linked to the localities by
 #   Machine Number + Analysis Unit
-# and receives the locality's SiteName, latitude and longitude.
-# If the locality files have no match, the SiteName is taken from the
-# site-reference table instead (no coordinates are available then).
+# Each fauna record receives its locality's period, SiteName, latitude and
+# longitude.
 #
-# Every fauna record is kept, matched or not.
-# No five-fauna-per-site filter is applied.
+# Localities without a proper age are REMOVED (with all their fauna):
+#   - minimum or maximum age missing (or not a number)
+#   - maximum age younger than minimum age, or a negative age
+#   - age inconsistent with the locality's land-mammal age (NALMA): the
+#     midpoint lies more than 'nalma_tolerance' Myr outside the NALMA window
+#     (e.g. an Irvingtonian site with a maximum age of 22 Ma)
+# Every removed locality is listed with its reason in removed_localities.csv.
 #
-# Run the whole file (Ctrl+Shift+S or Ctrl+Shift+Enter in RStudio).
-# Progress is printed after every stage; the objects stay in the
-# Environment pane so you can inspect them.
+# Outputs (Outputs/1_linked/), used by Steps 2, 2b and 3:
+#   blancan_localities.csv, irvingtonian_localities.csv, rancholabrean_localities.csv
+#   blancan_fauna.csv, irvingtonian_fauna.csv, rancholabrean_fauna.csv
+#   removed_localities.csv   localities removed for their age, and why
+#   unmatched_fauna.csv      faunalf.csv records not linked to a kept locality
+#   link_summary.csv         counts per period
+#
+# Run the whole file (Ctrl+Shift+S in RStudio).
+# Needs: dplyr, readxl.
 # =============================================================================
+
+for (pkg in c("dplyr", "readxl")) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    stop("Package '", pkg, "' is not installed. Run: install.packages(\"", pkg, "\")")
+  }
+}
 
 library(dplyr)
 
@@ -23,314 +41,240 @@ library(dplyr)
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-blancan_fauna_file      <- "Blancan Fauna - Filtered.csv"
-irvingtonian_fauna_file <- "Irvingtonian Fauna - Filtered.csv"
-site_reference_file     <- "SiteName_Reference_Table.csv"
-blancan_loc_file        <- "Blancan Localities Data (Updated).csv"
-irvingtonian_loc_file   <- "Irvingtonian Localities Data (Updated).csv"
+locality_files <- c(
+  Blancan       = "Blancan_Sites.xlsx",
+  Irvingtonian  = "Irvingtonian_Sites.xlsx",
+  Rancholabrean = "Rancholabrean_Sites.xlsx"
+)
+fauna_file <- "faunalf.csv"
 
 output_dir <- file.path(work_dir, "Outputs", "1_linked")
 
-# =============================================================================
-# 1. CHECK THAT THE FOLDER AND FILES EXIST
-# =============================================================================
-
-cat("=== 1. CHECKING INPUT FILES ===\n")
-
-if (!dir.exists(work_dir)) {
-  stop("The folder does not exist:\n  ", work_dir)
-}
-
-needed <- c(blancan_fauna_file, irvingtonian_fauna_file, site_reference_file,
-            blancan_loc_file, irvingtonian_loc_file)
-found <- file.exists(file.path(work_dir, needed))
-
-for (i in seq_along(needed)) {
-  cat(if (found[i]) "  [found]   " else "  [MISSING] ", needed[i], "\n", sep = "")
-}
-
-if (!all(found)) {
-  cat("\nCSV files actually present in the folder:\n")
-  cat(paste0("  ", list.files(work_dir, pattern = "\\.csv$", ignore.case = TRUE)),
-      sep = "\n")
-  stop("Some input files were not found. Fix the file names in SETTINGS.")
-}
+# Age checks. NALMA windows (Ma) used to catch impossible ages; a locality is
+# removed when its midpoint lies more than 'nalma_tolerance' outside its window.
+check_nalma_ages <- TRUE
+nalma_windows <- list(
+  Blancan       = c(older = 4.90, younger = 1.35),
+  Irvingtonian  = c(older = 1.90, younger = 0.21),
+  Rancholabrean = c(older = 0.30, younger = 0.0117)
+)
+nalma_tolerance <- 0.5    # Myr
 
 # =============================================================================
-# 2. READ THE FILES
+# HELPERS
 # =============================================================================
-
-cat("\n=== 2. READING FILES ===\n")
-
-read_input <- function(file) {
-  df <- read.csv(
-    file.path(work_dir, file),
-    check.names = FALSE,
-    stringsAsFactors = FALSE,
-    colClasses = "character",          # keep identifiers exactly as written
-    na.strings = c("", "NA", "N/A")
-  )
-
-  # CSVs saved from Excel often carry a hidden byte-order mark on the first
-  # column name, and column names may have stray spaces. Remove both.
-  # Working on raw bytes avoids errors from the invisible characters.
-  names(df) <- trimws(sub("^[^A-Za-z0-9]+", "", names(df), useBytes = TRUE))
-
-  cat(sprintf("  %-45s %7d rows, %3d columns\n", file, nrow(df), ncol(df)))
-  df
-}
-
-blancan_fauna_raw      <- read_input(blancan_fauna_file)
-irvingtonian_fauna_raw <- read_input(irvingtonian_fauna_file)
-site_reference_raw     <- read_input(site_reference_file)
-blancan_loc_raw        <- read_input(blancan_loc_file)
-irvingtonian_loc_raw   <- read_input(irvingtonian_loc_file)
-
-# =============================================================================
-# 3. FIND THE COLUMNS WE NEED IN EACH FILE
-#
-# Column names are compared ignoring case, spaces, dots and underscores,
-# so "Machine Number", "Machine.Number" and "machine_number" all match.
-# Options are listed in order of preference: if a file has several
-# candidates (e.g. both LATDD and Latitude), the first one listed is used.
-# =============================================================================
-
-cat("\n=== 3. IDENTIFYING COLUMNS ===\n")
 
 simplify_name <- function(x) gsub("[^a-z0-9]", "", tolower(x))
+clean_text <- function(x) { x <- trimws(as.character(x)); x[x == ""] <- NA_character_; x }
+machine_key <- function(x) sub("^([0-9]+)\\.0+$", "\\1", clean_text(x))   # 1234.00 = 1234
+to_num <- function(x) suppressWarnings(as.numeric(clean_text(x)))
+to_coord <- function(x, limit) { v <- to_num(x); v[!is.na(v) & abs(v) > limit] <- NA; v }
 
-column_options <- list(
-  machine  = c("machinenumber", "machineno", "machine"),
-  analysis = c("analysisunit"),
-  site     = c("sitename"),
-  lat      = c("latdd", "latitude", "lat"),
-  lon      = c("longdd", "longitude", "long", "lng", "lon")
-)
-
-find_col <- function(df, field, file) {
+# First column matching one of the options (case, spaces, dots, underscores ignored).
+find_col <- function(df, options, label, file, required = TRUE) {
   simple <- simplify_name(names(df))
-
-  for (option in column_options[[field]]) {
-    hit <- names(df)[simple == option]
-    if (length(hit) > 1) {
-      stop("Several columns in ", file, " are all called '", option, "': ",
-           paste(hit, collapse = ", "))
-    }
-    if (length(hit) == 1) return(hit)
+  for (o in options) {
+    hit <- names(df)[simple == o]
+    if (length(hit) >= 1) return(hit[1])
   }
-
-  stop("No '", field, "' column found in ", file,
-       ".\nColumns in this file: ", paste(names(df), collapse = " | "))
+  if (required) stop("No '", label, "' column found in ", file,
+                     ".\nColumns: ", paste(names(df), collapse = " | "))
+  NA_character_
 }
 
-# Other columns that could also have been used for a field (for reporting).
-other_candidates <- function(df, field, used) {
-  hits <- names(df)[simplify_name(names(df)) %in% column_options[[field]]]
-  setdiff(hits, used)
+# Finds a file, allowing spaces or underscores in its name.
+locate <- function(file) {
+  path <- file.path(work_dir, file)
+  if (file.exists(path)) return(path)
+  pattern <- paste0("^", gsub("[ _]", "[ _]", gsub("\\.", "\\\\.", file)), "$")
+  hit <- list.files(work_dir, pattern = pattern, ignore.case = TRUE, full.names = TRUE)
+  if (length(hit)) return(hit[1])
+  stop("File not found:\n  ", path)
 }
-
-show_cols <- function(df, file, fields) {
-  cols <- sapply(fields, function(f) find_col(df, f, file))
-  cat("  ", file, "\n", sep = "")
-
-  for (f in fields) {
-    others <- other_candidates(df, f, cols[[f]])
-    note <- if (length(others)) {
-      paste0("   (also present, not used: ", paste(others, collapse = ", "), ")")
-    } else ""
-    cat(sprintf("      %-9s -> \"%s\"%s\n", f, cols[[f]], note))
-
-    # If an unused coordinate column exists, show whether it agrees.
-    if (f %in% c("lat", "lon")) {
-      for (o in others) {
-        a <- suppressWarnings(as.numeric(df[[cols[[f]]]]))
-        b <- suppressWarnings(as.numeric(df[[o]]))
-        both <- !is.na(a) & !is.na(b)
-        cat(sprintf(
-          "                  %s vs %s: %d rows differ by > 0.001 degree; %d rows have only %s\n",
-          cols[[f]], o, sum(abs(a[both] - b[both]) > 0.001), sum(is.na(a) & !is.na(b)), o
-        ))
-      }
-    }
-  }
-  cols
-}
-
-blancan_fauna_cols      <- show_cols(blancan_fauna_raw, blancan_fauna_file, c("machine", "analysis"))
-irvingtonian_fauna_cols <- show_cols(irvingtonian_fauna_raw, irvingtonian_fauna_file, c("machine", "analysis"))
-site_reference_cols     <- show_cols(site_reference_raw, site_reference_file, c("machine", "analysis", "site"))
-blancan_loc_cols        <- show_cols(blancan_loc_raw, blancan_loc_file, c("machine", "analysis", "site", "lat", "lon"))
-irvingtonian_loc_cols   <- show_cols(irvingtonian_loc_raw, irvingtonian_loc_file, c("machine", "analysis", "site", "lat", "lon"))
-
-# =============================================================================
-# 4. BUILD MATCHING KEYS AND LOOKUP TABLES
-# =============================================================================
-
-cat("\n=== 4. BUILDING LOOKUP TABLES ===\n")
-
-clean_text <- function(x) {
-  x <- trimws(as.character(x))
-  x[x == ""] <- NA_character_
-  x
-}
-
-# 1234.00 and 1234 become the same key; the original column is untouched.
-machine_key <- function(x) sub("^([0-9]+)\\.0+$", "\\1", clean_text(x))
-
-to_coord <- function(x, limit) {
-  v <- suppressWarnings(as.numeric(clean_text(x)))
-  v[!is.na(v) & abs(v) > limit] <- NA     # impossible values -> missing
-  v
-}
-
-# Pairs that carry more than one SiteName are reported, not fatal:
-# the first name is used and the conflicts are saved for checking.
-name_conflicts <- list()
-
-make_lookup <- function(df, cols, label, with_coords) {
-  keyed <- data.frame(
-    .mk = machine_key(df[[cols[["machine"]]]]),
-    .ak = clean_text(df[[cols[["analysis"]]]]),
-    SiteName = clean_text(df[[cols[["site"]]]]),
-    stringsAsFactors = FALSE
-  )
-  if (with_coords) {
-    keyed$Latitude  <- to_coord(df[[cols[["lat"]]]], 90)
-    keyed$Longitude <- to_coord(df[[cols[["lon"]]]], 180)
-  }
-
-  dropped <- sum(is.na(keyed$.mk) | is.na(keyed$.ak))
-  keyed <- filter(keyed, !is.na(.mk), !is.na(.ak))
-
-  conflicts <- keyed %>%
-    group_by(.mk, .ak) %>%
-    filter(n_distinct(SiteName, na.rm = TRUE) > 1) %>%
-    ungroup() %>%
-    distinct(.mk, .ak, SiteName) %>%
-    mutate(Source = label)
-  if (nrow(conflicts) > 0) name_conflicts[[label]] <<- conflicts
-
-  lookup <- keyed %>%
-    group_by(.mk, .ak) %>%
-    summarise(
-      SiteName = SiteName[!is.na(SiteName)][1],
-      Rows_For_Pair = n(),
-      .groups = "drop"
-    )
-
-  if (with_coords) {
-    # Coordinates come from the first row of the pair that has both values.
-    coords <- keyed %>%
-      filter(!is.na(Latitude), !is.na(Longitude)) %>%
-      distinct(.mk, .ak, .keep_all = TRUE) %>%
-      select(.mk, .ak, Latitude, Longitude)
-    lookup <- left_join(lookup, coords, by = c(".mk", ".ak"))
-  }
-
-  cat(sprintf(
-    "  %-28s %6d unique pairs | %4d rows without a full pair | %4d pairs with conflicting names\n",
-    label, nrow(lookup), dropped, n_distinct(paste(conflicts$.mk, conflicts$.ak)) * (nrow(conflicts) > 0)
-  ))
-  lookup
-}
-
-reference_lookup <- make_lookup(site_reference_raw, site_reference_cols,
-                                "Site reference table", with_coords = FALSE) %>%
-  rename(Reference_SiteName = SiteName, Reference_Rows = Rows_For_Pair)
-
-blancan_loc_lookup <- make_lookup(blancan_loc_raw, blancan_loc_cols,
-                                  "Blancan localities", with_coords = TRUE) %>%
-  rename(Locality_SiteName = SiteName, Locality_Rows = Rows_For_Pair)
-
-irvingtonian_loc_lookup <- make_lookup(irvingtonian_loc_raw, irvingtonian_loc_cols,
-                                       "Irvingtonian localities", with_coords = TRUE) %>%
-  rename(Locality_SiteName = SiteName, Locality_Rows = Rows_For_Pair)
-
-# =============================================================================
-# 5. LINK EACH FAUNA FILE
-# =============================================================================
-
-cat("\n=== 5. LINKING FAUNA TO LOCALITIES ===\n")
-
-link_fauna <- function(fauna, cols, loc_lookup, period) {
-  keyed <- fauna %>%
-    mutate(
-      .mk = machine_key(.data[[cols[["machine"]]]]),
-      .ak = clean_text(.data[[cols[["analysis"]]]])
-    )
-
-  # If the fauna file already has a column this step adds (e.g. Latitude),
-  # keep it under a new name such as "Latitude_original".
-  added <- c(names(reference_lookup), names(loc_lookup), "FAUNMAP_Period",
-             "SiteName_Linked", "Match_Source", "Has_Coordinates")
-  clash <- setdiff(intersect(names(fauna), added), c(".mk", ".ak"))
-  if (length(clash) > 0) {
-    cat("  ", period, ": renamed existing column(s) ",
-        paste(clash, collapse = ", "), " -> *_original\n", sep = "")
-    names(keyed)[names(keyed) %in% clash] <- paste0(names(keyed)[names(keyed) %in% clash], "_original")
-  }
-
-  linked <- keyed %>%
-    left_join(reference_lookup, by = c(".mk", ".ak")) %>%
-    left_join(loc_lookup, by = c(".mk", ".ak")) %>%
-    mutate(
-      FAUNMAP_Period = period,
-      SiteName_Linked = coalesce(Locality_SiteName, Reference_SiteName),
-      Match_Source = case_when(
-        !is.na(Locality_SiteName) ~ "Locality file",
-        !is.na(Reference_SiteName) ~ "Reference table only",
-        TRUE ~ "No match"
-      ),
-      Has_Coordinates = !is.na(Latitude) & !is.na(Longitude)
-    ) %>%
-    select(-.mk, -.ak) %>%
-    relocate(FAUNMAP_Period, SiteName_Linked, Latitude, Longitude,
-             Match_Source, Has_Coordinates, .after = last_col())
-
-  if (nrow(linked) != nrow(fauna)) {
-    stop(period, ": linking changed the number of fauna records (",
-         nrow(fauna), " -> ", nrow(linked), ").")
-  }
-
-  cat("  ", period, ":\n", sep = "")
-  cat(sprintf("      fauna records ............... %6d\n", nrow(linked)))
-  cat(sprintf("      matched to a locality ....... %6d\n", sum(linked$Match_Source == "Locality file")))
-  cat(sprintf("      site name from reference only %6d\n", sum(linked$Match_Source == "Reference table only")))
-  cat(sprintf("      not matched at all .......... %6d\n", sum(linked$Match_Source == "No match")))
-  cat(sprintf("      with latitude/longitude ..... %6d\n", sum(linked$Has_Coordinates)))
-  linked
-}
-
-blancan_fauna_linked <- link_fauna(blancan_fauna_raw, blancan_fauna_cols,
-                                   blancan_loc_lookup, "Blancan")
-irvingtonian_fauna_linked <- link_fauna(irvingtonian_fauna_raw, irvingtonian_fauna_cols,
-                                        irvingtonian_loc_lookup, "Irvingtonian")
-
-unmatched_fauna <- bind_rows(blancan_fauna_linked, irvingtonian_fauna_linked) %>%
-  filter(Match_Source != "Locality file")
-
-name_conflicts <- bind_rows(name_conflicts) %>%
-  rename(any_of(c(Machine_Number = ".mk", Analysis_Unit = ".ak")))
-
-# =============================================================================
-# 6. SAVE
-# =============================================================================
-
-cat("\n=== 6. SAVING ===\n")
-
-dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 save_csv <- function(df, name) {
   path <- file.path(output_dir, paste0(name, ".csv"))
-  write.csv(df, path, row.names = FALSE, na = "")
-  cat(sprintf("  %-22s %7d rows -> %s\n", name, nrow(df), path))
+  ok <- tryCatch({ write.csv(df, path, row.names = FALSE, na = ""); TRUE },
+                 error = function(e) FALSE, warning = function(w) FALSE)
+  if (!ok) {
+    path <- sub("\\.csv$", "_new.csv", path)
+    write.csv(df, path, row.names = FALSE, na = "")
+    cat("  NOTE: file was open elsewhere - saved as", basename(path), "\n")
+  }
+  cat(sprintf("  %-28s %7d rows -> %s\n", name, nrow(df), path))
 }
 
-save_csv(blancan_fauna_linked, "blancan_fauna")
-save_csv(irvingtonian_fauna_linked, "irvingtonian_fauna")
+# =============================================================================
+# 1. READ THE LOCALITY WORKBOOKS
+# =============================================================================
+
+cat("=== 1. READING FAUNMAP LOCALITIES ===\n")
+if (!dir.exists(work_dir)) stop("The folder does not exist:\n  ", work_dir)
+
+loc_raw <- lapply(names(locality_files), function(p) {
+  path <- locate(locality_files[[p]])
+  df <- as.data.frame(readxl::read_excel(path, col_types = "text"), stringsAsFactors = FALSE)
+  names(df) <- trimws(names(df))
+  cat(sprintf("  %-28s %6d rows, %3d columns\n", basename(path), nrow(df), ncol(df)))
+  df
+})
+names(loc_raw) <- names(locality_files)
+
+# =============================================================================
+# 2. CHECK AGES; REMOVE LOCALITIES WITHOUT A PROPER AGE
+# =============================================================================
+
+cat("\n=== 2. CHECKING AGES ===\n")
+
+loc_checked <- lapply(names(loc_raw), function(p) {
+  df <- loc_raw[[p]]; f <- locality_files[[p]]
+  c_mach <- find_col(df, c("machinenumber", "machineno", "machine"), "Machine Number", f)
+  c_anal <- find_col(df, c("analysisunit"), "Analysis Unit", f)
+  c_site <- find_col(df, c("sitename"), "SiteName", f)
+  c_min  <- find_col(df, c("minimumage", "minage"), "MinimumAge", f)
+  c_max  <- find_col(df, c("maximumage", "maxage"), "MaximumAge", f)
+  c_lat  <- find_col(df, c("latdd", "latitude", "lat"), "latitude", f)
+  c_lon  <- find_col(df, c("longdd", "longitude", "long", "lng", "lon"), "longitude", f)
+  win <- nalma_windows[[p]]
+  df %>% mutate(
+    FAUNMAP_Period = p,
+    .mk = machine_key(.data[[c_mach]]), .ak = clean_text(.data[[c_anal]]),
+    .site = clean_text(.data[[c_site]]),
+    .min = to_num(.data[[c_min]]), .max = to_num(.data[[c_max]]),
+    .mid = (.min + .max) / 2,
+    .lat = to_coord(.data[[c_lat]], 90), .lon = to_coord(.data[[c_lon]], 180),
+    Age_Problem = case_when(
+      is.na(.min) & is.na(.max)                   ~ "no age",
+      is.na(.min) | is.na(.max)                   ~ "minimum or maximum age missing",
+      .min < 0 | .max < 0                         ~ "negative age",
+      .max < .min                                 ~ "maximum age younger than minimum age",
+      check_nalma_ages & .mid > win[["older"]] + nalma_tolerance ~
+        sprintf("age too old for %s (midpoint %.3g Ma)", p, .mid),
+      check_nalma_ages & .mid < win[["younger"]] - nalma_tolerance ~
+        sprintf("age too young for %s (midpoint %.3g Ma)", p, .mid),
+      TRUE ~ NA_character_),
+    Missing_Pair = is.na(.mk) | is.na(.ak))
+})
+names(loc_checked) <- names(loc_raw)
+
+removed_localities <- bind_rows(lapply(loc_checked, function(df) {
+  df %>% filter(!is.na(Age_Problem)) %>%
+    transmute(FAUNMAP_Period, Machine_Number = .mk, Analysis_Unit = .ak, SiteName = .site,
+              MinimumAge = .min, MaximumAge = .max, Reason = sub(" \\(midpoint.*$", "", Age_Problem),
+              Detail = Age_Problem)
+}))
+
+for (p in names(loc_checked)) {
+  df <- loc_checked[[p]]
+  cat(sprintf("  %-14s %5d localities | %5d removed for their age | %5d kept\n", p,
+              nrow(df), sum(!is.na(df$Age_Problem)), sum(is.na(df$Age_Problem))))
+}
+cat("\n  Removed localities by reason:\n")
+print(as.data.frame(count(removed_localities, FAUNMAP_Period, Reason)), row.names = FALSE)
+
+loc_kept <- lapply(loc_checked, function(df) filter(df, is.na(Age_Problem)))
+
+# Lookup: one row per Machine Number + Analysis Unit (pairs are unique across
+# the three workbooks; duplicates within a workbook use the first row).
+loc_lookup <- bind_rows(lapply(loc_kept, function(df) {
+  df %>% filter(!Missing_Pair) %>%
+    transmute(.mk, .ak, FAUNMAP_Period, SiteName_Linked = .site, Latitude = .lat, Longitude = .lon)
+}))
+dup_pairs <- loc_lookup %>% count(.mk, .ak) %>% filter(n > 1)
+if (nrow(dup_pairs) > 0) {
+  cat(sprintf("\n  NOTE: %d Machine Number + Analysis Unit pairs occur on more than one kept locality row;\n",
+              nrow(dup_pairs)), "        the first row is used for their fauna.\n")
+}
+loc_lookup <- distinct(loc_lookup, .mk, .ak, .keep_all = TRUE)
+
+all_pairs <- bind_rows(lapply(loc_checked, function(df) {
+  df %>% filter(!Missing_Pair) %>% transmute(.mk, .ak, .removed_period = FAUNMAP_Period,
+                                             .age_problem = Age_Problem)
+})) %>% distinct(.mk, .ak, .keep_all = TRUE)
+
+# =============================================================================
+# 3. LINK FAUNA (faunalf.csv) TO THE LOCALITIES
+# =============================================================================
+
+cat("\n=== 3. LINKING FAUNA ===\n")
+
+fauna_path <- locate(fauna_file)
+fauna_raw <- read.csv(fauna_path, check.names = FALSE, stringsAsFactors = FALSE,
+                      colClasses = "character", na.strings = c("", "NA", "N/A"))
+names(fauna_raw) <- trimws(sub("^[^A-Za-z0-9]+", "", names(fauna_raw), useBytes = TRUE))
+cat(sprintf("  %-28s %6d rows, %3d columns\n", basename(fauna_path), nrow(fauna_raw), ncol(fauna_raw)))
+
+f_mach <- find_col(fauna_raw, c("machinenumber", "machineno", "machine"), "Machine Number", fauna_file)
+f_anal <- find_col(fauna_raw, c("analysisunit"), "Analysis Unit", fauna_file)
+cat(sprintf("  Linking on '%s' + '%s'\n", f_mach, f_anal))
+
+# Columns this step adds; same-named columns already in faunalf.csv are kept as *_original.
+added <- c("FAUNMAP_Period", "SiteName_Linked", "Latitude", "Longitude", "Match_Source", "Has_Coordinates")
+fauna <- fauna_raw
+clash <- intersect(names(fauna), added)
+if (length(clash)) names(fauna)[names(fauna) %in% clash] <- paste0(clash, "_original")
+
+fauna_linked <- fauna %>%
+  mutate(.mk = machine_key(.data[[f_mach]]), .ak = clean_text(.data[[f_anal]])) %>%
+  left_join(loc_lookup, by = c(".mk", ".ak")) %>%
+  left_join(all_pairs, by = c(".mk", ".ak")) %>%
+  mutate(Match_Source = case_when(
+           !is.na(FAUNMAP_Period) ~ "Locality file",
+           !is.na(.age_problem)   ~ paste0("Locality removed (", .removed_period, ": ",
+                                           sub(" \\(midpoint.*$", "", .age_problem), ")"),
+           is.na(.mk) | is.na(.ak) ~ "No Machine Number / Analysis Unit",
+           TRUE                   ~ "Not in the three locality workbooks"),
+         Has_Coordinates = !is.na(Latitude) & !is.na(Longitude))
+stopifnot(nrow(fauna_linked) == nrow(fauna_raw))
+
+linked_by_period <- lapply(names(locality_files), function(p) {
+  fauna_linked %>% filter(FAUNMAP_Period %in% p) %>%
+    select(-.mk, -.ak, -.removed_period, -.age_problem)
+})
+names(linked_by_period) <- names(locality_files)
+unmatched_fauna <- fauna_linked %>% filter(is.na(FAUNMAP_Period)) %>%
+  select(-.mk, -.ak, -.removed_period, -.age_problem)
+
+for (p in names(linked_by_period)) {
+  cat(sprintf("  %-14s %7d fauna records linked (%d with coordinates)\n", p,
+              nrow(linked_by_period[[p]]), sum(linked_by_period[[p]]$Has_Coordinates)))
+}
+cat(sprintf("  %-14s %7d fauna records not linked:\n", "Unmatched", nrow(unmatched_fauna)))
+print(as.data.frame(count(unmatched_fauna, Match_Source, sort = TRUE)), row.names = FALSE)
+
+# Kept localities with no fauna at all (Step 2b removes these).
+no_fauna <- sapply(names(loc_kept), function(p) {
+  k <- loc_kept[[p]]
+  sum(!paste(k$.mk, k$.ak) %in% paste(linked_by_period[[p]][[f_mach]] %>% machine_key(),
+                                      clean_text(linked_by_period[[p]][[f_anal]])))
+})
+
+# =============================================================================
+# 4. SAVE
+# =============================================================================
+
+cat("\n=== 4. SAVING ===\n")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+for (p in names(locality_files)) {
+  stub <- tolower(p)
+  save_csv(loc_kept[[p]] %>% select(-starts_with("."), -Age_Problem, -Missing_Pair),
+           paste0(stub, "_localities"))
+  save_csv(linked_by_period[[p]], paste0(stub, "_fauna"))
+}
+save_csv(removed_localities, "removed_localities")
 save_csv(unmatched_fauna, "unmatched_fauna")
-if (nrow(name_conflicts) > 0) save_csv(name_conflicts, "site_name_conflicts")
+
+link_summary <- data.frame(
+  Period = names(locality_files),
+  localities_in_file = sapply(loc_checked, nrow),
+  removed_for_age = sapply(loc_checked, function(d) sum(!is.na(d$Age_Problem))),
+  localities_kept = sapply(loc_kept, nrow),
+  kept_localities_without_fauna = no_fauna,
+  fauna_records_linked = sapply(linked_by_period, nrow),
+  row.names = NULL)
+save_csv(link_summary, "link_summary")
+print(link_summary, row.names = FALSE)
 
 cat("\n=== STEP 1 COMPLETE ===\n")
-cat("Objects in your Environment: blancan_fauna_linked, irvingtonian_fauna_linked,\n",
-    "unmatched_fauna, reference_lookup, blancan_loc_lookup, irvingtonian_loc_lookup\n", sep = "")
+cat("Objects in your Environment: loc_kept, linked_by_period, removed_localities, unmatched_fauna\n")
