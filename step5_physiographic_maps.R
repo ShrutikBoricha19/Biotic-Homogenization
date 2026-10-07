@@ -23,7 +23,7 @@
 #       province and section, or Canadian region and subregion.
 #       Key columns: Site_Key + Stage_Number (the same keys as Step 3).
 #   occurrences_physio.csv / .rds
-#       Every FAUNMAP fauna record and PBDB occurrence from Step 3 with the
+#       Every FAUNMAP fauna record and PBDB occurrence from Step 3c with the
 #       physiographic units of its site attached - ready for analysis.
 #   physio_units_key_divisions.csv / physio_units_key_provinces.csv
 #       The numbered keys used on the maps.
@@ -33,8 +33,8 @@
 # colour). Grey land = no physiographic layer (Alaska, Hawaii, Mexico).
 #
 # Input:  Outputs/3_stages/ (site_index.csv, faunmap_fauna.csv,
-#         pbdb_occurrences.csv) from Step 3
-# Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
+#         pbdb_occurrences.csv) from Step 3c
+# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 3 and 3c.
 # Needs: dplyr, ggplot2, sf, maps (ggrepel optional, for tidier labels).
 # =============================================================================
 
@@ -379,7 +379,7 @@ physio_levels <- list(
 cat("\n=== 3. LINKING SITES TO PHYSIOGRAPHIC UNITS ===\n")
 
 index_path <- file.path(stages_dir, "site_index.csv")
-if (!file.exists(index_path)) stop("File not found:\n  ", index_path, "\nRun Step 3 first.")
+if (!file.exists(index_path)) stop("File not found:\n  ", index_path, "\nRun Steps 3 and 3c first.")
 
 site_index <- read.csv(index_path, check.names = FALSE, stringsAsFactors = FALSE,
                        na.strings = c("", "NA"))

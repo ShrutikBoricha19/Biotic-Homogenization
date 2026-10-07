@@ -1,5 +1,5 @@
 # =============================================================================
-# STEP 3: ASSIGN FAUNMAP AND PBDB RECORDS TO TIME BINS
+# STEP 3c: ASSIGN FAUNMAP AND PBDB RECORDS TO TIME BINS
 #
 # Each record is placed in ONE numbered time bin using the MIDPOINT of its
 # age range. Bins are 'bin_width' (0.75 Myr) long, from 'bin_start' (4.00 Ma)
@@ -13,23 +13,25 @@
 # it to the bin before it. The bins are saved to time_bins.csv, which every
 # later step reads, so a change here carries through the whole pipeline.
 #
-# Before binning, sites in Alaska and Canadian sites north of 60 degrees N
-# (north of British Columbia, Alberta, Saskatchewan and Manitoba: Yukon,
-# Northwest Territories, Nunavut and the far north of Quebec) are removed.
+# Sites in Alaska, Hawaii and Canada north of 60 degrees N were already
+# removed by Step 3 (spatial binning); the spatial units it assigned
+# (Country, State_Province, Physio_Division, Physio_Province, US_Section) are
+# carried into every output here.
 #
 # Records whose age range crosses a bin boundary are KEPT (and flagged).
 # No five-fauna-per-site filter is applied.
 # Latitude/longitude are carried into every output.
 #
-# Inputs (all from Step 2b, which cleans the Step 1 and Step 2 outputs):
-#   Outputs/2b_clean/<period>_localities.csv and <period>_fauna.csv
+# Inputs (all from Step 3, spatial binning):
+#   Outputs/3_spatial/<period>_localities.csv and <period>_fauna.csv
 #   (period = blancan, irvingtonian, rancholabrean)
-#   Outputs/2b_clean/pbdb_clean.csv
+#   Outputs/3_spatial/pbdb_clean.csv
+# Outputs: Outputs/3_stages/ (read by Steps 3b and 4-9).
 #
-# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 1, 2 and 2b.
+# Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
 # =============================================================================
 
-for (pkg in c("dplyr", "sf", "maps")) {
+for (pkg in c("dplyr")) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     stop("Package '", pkg, "' is not installed. Run: install.packages(\"", pkg, "\")")
   }
@@ -43,12 +45,12 @@ library(dplyr)
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-# Cleaned files from Step 2b (Canada/USA/Mexico only; no marine mammals or bats).
+# Files from Step 3 (spatial binning): Step 2b files with spatial units added.
 periods <- c("Blancan", "Irvingtonian", "Rancholabrean")
-loc_files   <- setNames(file.path("Outputs", "2b_clean", paste0(tolower(periods), "_localities.csv")), periods)
-fauna_files <- setNames(file.path("Outputs", "2b_clean", paste0(tolower(periods), "_fauna.csv")), periods)
+loc_files   <- setNames(file.path("Outputs", "3_spatial", paste0(tolower(periods), "_localities.csv")), periods)
+fauna_files <- setNames(file.path("Outputs", "3_spatial", paste0(tolower(periods), "_fauna.csv")), periods)
 
-pbdb_file               <- file.path("Outputs", "2b_clean", "pbdb_clean.csv")
+pbdb_file               <- file.path("Outputs", "3_spatial", "pbdb_clean.csv")
 
 output_dir <- file.path(work_dir, "Outputs", "3_stages")
 
@@ -59,11 +61,6 @@ bin_width <- 0.75     # Myr
 bin_start <- 4.00     # Ma, older limit of Bin 1 (steps: 4.00, 3.25, 2.50 ...)
 bin_end   <- 0.0117   # Ma, end of the Late Pleistocene (11,700 years ago)
 merge_short_last_bin <- FALSE   # TRUE: a last bin shorter than half the width joins the bin before it
-
-# Geographic limits.
-remove_alaska      <- TRUE
-canada_north_limit <- 60      # degrees N; Canadian sites north of this are removed (NA = keep all)
-coast_buffer_km    <- 25      # sites in the sea this close to Alaska count as Alaska
 
 bin_bounds <- round(seq(bin_start, bin_end, by = -bin_width), 6)
 if (min(bin_bounds) > bin_end) bin_bounds <- c(bin_bounds, bin_end)
@@ -96,7 +93,7 @@ for (i in seq_along(needed)) {
 }
 
 if (!all(found)) {
-  stop("Some input files were not found. Run Steps 1, 2 and 2b first, ",
+  stop("Some input files were not found. Run Steps 1, 2, 2b and 3 first, ",
        "or fix the file names in SETTINGS.")
 }
 
@@ -257,45 +254,6 @@ add_stage <- function(df, max_col, min_col) {
     )
 }
 
-# Geographic exclusions: Alaska, and Canada north of 'canada_north_limit'.
-# Returns a reason, or NA for sites that stay (and for sites without
-# coordinates, which cannot be checked).
-library(sf)
-suppressMessages(sf::sf_use_s2(FALSE))
-world <- sf::st_as_sf(maps::map("world", regions = c("USA", "Canada"), fill = TRUE, plot = FALSE))
-world <- sf::st_set_crs(sf::st_set_crs(world, NA), 4326)
-world <- suppressMessages(suppressWarnings(sf::st_make_valid(world)))
-world$Part <- ifelse(grepl("^Canada", world$ID), "Canada", "USA")
-world <- suppressMessages(world %>% group_by(Part) %>% summarise(.groups = "drop"))
-na_albers <- "+proj=aea +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +datum=WGS84 +units=m"
-
-geo_exclusion <- function(lat, lon) {
-  out <- rep(NA_character_, length(lat))
-  ok <- !is.na(lat) & !is.na(lon)
-  if (!any(ok)) return(out)
-  pts <- sf::st_as_sf(data.frame(lon = lon[ok], lat = lat[ok]), coords = c("lon", "lat"), crs = 4326)
-  hit <- suppressMessages(sf::st_intersects(pts, world))
-  part <- vapply(hit, function(h) if (length(h)) world$Part[h[1]] else NA_character_, character(1))
-  miss <- which(is.na(part))
-  if (length(miss)) {                         # sites in the sea: nearest land within the buffer
-    d <- sf::st_distance(sf::st_transform(pts[miss, ], na_albers), sf::st_transform(world, na_albers))
-    near <- apply(d, 1, which.min)
-    part[miss] <- ifelse(as.numeric(d[cbind(seq_along(miss), near)]) / 1000 <= coast_buffer_km,
-                         world$Part[near], "Sea / elsewhere")
-  }
-  # Mainland Alaska is part of the "USA" outline; the contiguous USA does not
-  # reach 50 degrees N, so any US location north of 50 degrees N is Alaska.
-  part[part %in% "USA"] <- ifelse(lat[ok][part %in% "USA"] > 50, "Alaska", "Other USA")
-  reason <- rep(NA_character_, length(part))
-  if (remove_alaska) reason[part %in% "Alaska"] <- "Alaska"
-  if (!is.na(canada_north_limit)) {
-    north <- lat[ok] > canada_north_limit & !part %in% c("Alaska", "Other USA")
-    reason[is.na(reason) & north] <- paste0("Canada north of ", canada_north_limit, " degrees N")
-  }
-  out[ok] <- reason
-  out
-}
-
 # =============================================================================
 # 5. FAUNMAP LOCALITIES: ASSIGN STAGES
 # =============================================================================
@@ -325,14 +283,6 @@ localities_all <- bind_rows(
   lapply(periods, function(p) prepare_localities(loc_raw[[p]], loc_cols[[p]], p))
 )
 
-# Geographic exclusions override the stage: such localities get no stage.
-localities_all <- localities_all %>%
-  mutate(Geo_Exclusion = geo_exclusion(Latitude, Longitude),
-         Exclusion_Reason = coalesce(Geo_Exclusion, Exclusion_Reason),
-         across(c(Stage_Number, Stage, Stage_Label), ~ if_else(is.na(Geo_Exclusion), .x, .x[NA_integer_])))
-cat(sprintf("  Localities removed: %d in Alaska, %d in Canada north of %s degrees N\n",
-            sum(localities_all$Geo_Exclusion %in% "Alaska"),
-            sum(grepl("^Canada north", localities_all$Geo_Exclusion)), canada_north_limit))
 
 faunmap_localities <- filter(localities_all, !is.na(Stage_Number))
 
@@ -434,17 +384,6 @@ pbdb_all <- pbdb_raw %>%
   ) %>%
   add_stage(pbdb_cols[["max_age"]], pbdb_cols[["min_age"]])
 
-pbdb_geo <- pbdb_all %>% distinct(Site_Key, Latitude, Longitude) %>%
-  mutate(Geo_Exclusion = geo_exclusion(Latitude, Longitude)) %>%
-  group_by(Site_Key) %>% summarise(Geo_Exclusion = first(na.omit(Geo_Exclusion))[1], .groups = "drop")
-pbdb_all <- pbdb_all %>%
-  left_join(pbdb_geo, by = "Site_Key") %>%
-  mutate(Exclusion_Reason = coalesce(Geo_Exclusion, Exclusion_Reason),
-         across(c(Stage_Number, Stage, Stage_Label), ~ if_else(is.na(Geo_Exclusion), .x, .x[NA_integer_])))
-cat(sprintf("  PBDB collections removed: %d in Alaska, %d in Canada north of %s degrees N\n",
-            n_distinct(pbdb_all$Site_Key[pbdb_all$Geo_Exclusion %in% "Alaska"]),
-            n_distinct(pbdb_all$Site_Key[grepl("^Canada north", pbdb_all$Geo_Exclusion)]),
-            canada_north_limit))
 
 pbdb_occurrences <- filter(pbdb_all, !is.na(Stage_Number))
 
@@ -464,6 +403,9 @@ cat("\n=== 8. BUILDING THE SITE INDEX ===\n")
 index_cols <- c("Database", "Dataset", "SiteName", "Site_Key", "Latitude", "Longitude",
                 "Stage_Number", "Stage", "Stage_Label", "NALMA", "Midpoint_Ma",
                 "Crosses_Stage_Boundary")
+# Spatial units from Step 3.
+spatial_cols <- c("Country", "State_Province", "State_Code", "Physio_Division",
+                  "Physio_Province", "US_Section")
 
 site_index <- bind_rows(
   faunmap_localities %>%
@@ -472,7 +414,7 @@ site_index <- bind_rows(
   pbdb_occurrences %>%
     mutate(Database = "PBDB", Dataset = "PBDB", SiteName = Collection)
 ) %>%
-  select(all_of(index_cols)) %>%
+  select(all_of(index_cols), any_of(spatial_cols)) %>%
   distinct() %>%
   arrange(Stage_Number, Database, SiteName, Site_Key)
 
@@ -581,6 +523,6 @@ time_bins <- data.frame(Bin_Number = seq_len(n_bins), Bin_Name = stage_names, Bi
 save_out(time_bins, "time_bins")
 print(time_bins, row.names = FALSE)
 
-cat("\n=== STEP 3 COMPLETE ===\n")
+cat("\n=== STEP 3c COMPLETE ===\n")
 cat("Objects in your Environment: faunmap_localities, faunmap_fauna, pbdb_occurrences,\n",
     "site_index, stage_summary, multi_stage_sites, excluded\n", sep = "")

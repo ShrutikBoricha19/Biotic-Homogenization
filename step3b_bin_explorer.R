@@ -3,7 +3,7 @@
 #
 # The five geological stages leave some province x stage combinations with
 # 0-6 sites and others with 70+. This script keeps the MIDPOINT age of every
-# site (from Step 3) and tests other ways of cutting time into bins:
+# site (from Step 3c) and tests other ways of cutting time into bins:
 #
 #   - Stages (current)          Zanclean ... Chibanian
 #   - NALMA                     Blancan (4.7-1.8 Ma) / Irvingtonian (1.8-0.129 Ma)
@@ -39,7 +39,7 @@
 # Counting unit: distinct sites (database + site name) per province and bin,
 # as in the Step 7 sites-per-stage figure.
 #
-# Inputs:  Outputs/3_stages/site_index.csv (Step 3)
+# Inputs:  Outputs/3_stages/site_index.csv (Step 3c)
 #          Outputs/maps/physiographic/site_physio_database.csv (Step 5)
 #          Outputs/6_matrices/all_records_final.csv (Step 6; to keep only
 #          sites that contribute species, as in Step 7)

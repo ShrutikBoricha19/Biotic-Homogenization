@@ -10,9 +10,9 @@
 #                                             Unit, SiteName_Linked, taxonomy)
 #   faunalf.csv (optional)                    only used to fill in a missing Order
 #                                             for a genus
-#   Outputs/3_stages/faunmap_localities.csv   FAUNMAP site, stage, lat/long (Step 3)
+#   Outputs/3_stages/faunmap_localities.csv   FAUNMAP site, stage, lat/long (Step 3c)
 #   Outputs/3_stages/pbdb_occurrences.csv     PBDB occurrences with stage,
-#                                             lat/long and taxonomy (Step 3)
+#                                             lat/long and taxonomy (Step 3c)
 #   Outputs/3_stages/site_index.csv           all sites per stage (for the
 #                                             site accounting only)
 #
@@ -45,7 +45,7 @@
 #                                   in the matrices
 #   summary.xlsx                    stage, order, resolution and site summaries
 #
-# Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
+# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 3 and 3c.
 # Needs: dplyr, tidyr, ggplot2, writexl.
 # =============================================================================
 

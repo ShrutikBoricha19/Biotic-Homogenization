@@ -33,7 +33,7 @@
 #
 # Outputs (Outputs/2b_clean/) - same columns as the input files:
 #   <period>_localities.csv   used by Step 3
-#   <period>_fauna.csv        used by Steps 3 and 6
+#   <period>_fauna.csv        used by Step 3 (spatial binning)
 #   pbdb_clean.csv                                        used by Step 3
 #   removed_sites.csv     every removed locality/collection and why
 #   removed_records.csv   every removed occurrence and why
@@ -454,4 +454,4 @@ print(as.data.frame(count(removed_sites, Database, Reason, sort = TRUE)), row.na
 
 cat("\n=== STEP 2b COMPLETE ===\n")
 cat("Cleaned files in:", output_dir, "\n")
-cat("Steps 3 and 6 read their FAUNMAP and PBDB inputs from this folder.\n")
+cat("Step 3 (spatial binning) reads its FAUNMAP and PBDB inputs from this folder.\n")

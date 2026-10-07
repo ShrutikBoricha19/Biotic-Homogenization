@@ -14,10 +14,10 @@
 # Outputs/maps/basemap/ and reused afterwards. If the download fails, the
 # maps fall back to US state boundaries only.
 #
-# Input:  Outputs/3_stages/site_index.csv  (from Step 3)
+# Input:  Outputs/3_stages/site_index.csv  (from Step 3c)
 # Output: Outputs/maps/  (one PNG per stage + the plotted points as CSV)
 #
-# Run the whole file (Ctrl+Shift+S in RStudio) after Step 3.
+# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 3 and 3c.
 # Needs the packages dplyr, ggplot2, maps and sf.
 # =============================================================================
 
@@ -70,7 +70,7 @@ cat("=== 1. READING SITE INDEX ===\n")
 
 path <- file.path(work_dir, site_index_file)
 if (!file.exists(path)) {
-  stop("File not found:\n  ", path, "\nRun Step 3 first.")
+  stop("File not found:\n  ", path, "\nRun Steps 3 and 3c first.")
 }
 
 site_index <- read.csv(path, check.names = FALSE, stringsAsFactors = FALSE,
