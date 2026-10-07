@@ -8,8 +8,12 @@
 # Each fauna record receives its locality's period, SiteName, latitude and
 # longitude.
 #
-# Localities without a proper age are REMOVED (with all their fauna):
-#   - minimum or maximum age missing (or not a number)
+# Localities with NO age at all are KEPT: they receive the minimum and maximum
+# age of their land-mammal age (NALMA; 'nalma_ages' below), and the column
+# Age_Source says so. Their midpoint is therefore the NALMA midpoint.
+#
+# Localities with an improper age are REMOVED (with all their fauna):
+#   - only one of minimum / maximum age given (or not a number)
 #   - maximum age younger than minimum age, or a negative age
 #   - age inconsistent with the locality's land-mammal age (NALMA): the
 #     midpoint lies more than 'nalma_tolerance' Myr outside the NALMA window
@@ -49,6 +53,15 @@ locality_files <- c(
 fauna_file <- "faunalf.csv"
 
 output_dir <- file.path(work_dir, "Outputs", "1_linked")
+
+# Ages given to localities with no age at all (Ma). Bell et al. (2004):
+# Blancan 4.9-1.35, Irvingtonian 1.35-0.21, Rancholabrean 0.21-0.0117.
+fill_no_age_from_nalma <- TRUE
+nalma_ages <- list(
+  Blancan       = c(older = 4.90, younger = 1.35),
+  Irvingtonian  = c(older = 1.35, younger = 0.21),
+  Rancholabrean = c(older = 0.21, younger = 0.0117)
+)
 
 # Age checks. NALMA windows (Ma) used to catch impossible ages; a locality is
 # removed when its midpoint lies more than 'nalma_tolerance' outside its window.
@@ -136,11 +149,17 @@ loc_checked <- lapply(names(loc_raw), function(p) {
   c_lat  <- find_col(df, c("latdd", "latitude", "lat"), "latitude", f)
   c_lon  <- find_col(df, c("longdd", "longitude", "long", "lng", "lon"), "longitude", f)
   win <- nalma_windows[[p]]
-  df %>% mutate(
+  fill <- nalma_ages[[p]]
+  out <- df %>% mutate(
     FAUNMAP_Period = p,
     .mk = machine_key(.data[[c_mach]]), .ak = clean_text(.data[[c_anal]]),
     .site = clean_text(.data[[c_site]]),
     .min = to_num(.data[[c_min]]), .max = to_num(.data[[c_max]]),
+    .no_age = is.na(.min) & is.na(.max) & fill_no_age_from_nalma,
+    Age_Source = ifelse(.no_age, sprintf("NALMA %s (%s-%s Ma): no age in file", p,
+                                         fill[["older"]], fill[["younger"]]), "file"),
+    .min = ifelse(.no_age, fill[["younger"]], .min),
+    .max = ifelse(.no_age, fill[["older"]], .max),
     .mid = (.min + .max) / 2,
     .lat = to_coord(.data[[c_lat]], 90), .lon = to_coord(.data[[c_lon]], 180),
     Age_Problem = case_when(
@@ -154,6 +173,10 @@ loc_checked <- lapply(names(loc_raw), function(p) {
         sprintf("age too young for %s (midpoint %.3g Ma)", p, .mid),
       TRUE ~ NA_character_),
     Missing_Pair = is.na(.mk) | is.na(.ak))
+  # Write the NALMA ages into the original age columns (used by Steps 2 and 3).
+  out[[c_min]] <- ifelse(out$.no_age, as.character(out$.min), out[[c_min]])
+  out[[c_max]] <- ifelse(out$.no_age, as.character(out$.max), out[[c_max]])
+  out
 })
 names(loc_checked) <- names(loc_raw)
 
@@ -166,8 +189,8 @@ removed_localities <- bind_rows(lapply(loc_checked, function(df) {
 
 for (p in names(loc_checked)) {
   df <- loc_checked[[p]]
-  cat(sprintf("  %-14s %5d localities | %5d removed for their age | %5d kept\n", p,
-              nrow(df), sum(!is.na(df$Age_Problem)), sum(is.na(df$Age_Problem))))
+  cat(sprintf("  %-14s %5d localities | %5d given NALMA ages (no age) | %5d removed for their age | %5d kept\n",
+              p, nrow(df), sum(df$.no_age), sum(!is.na(df$Age_Problem)), sum(is.na(df$Age_Problem))))
 }
 cat("\n  Removed localities by reason:\n")
 print(as.data.frame(count(removed_localities, FAUNMAP_Period, Reason)), row.names = FALSE)
@@ -270,6 +293,7 @@ link_summary <- data.frame(
   localities_in_file = sapply(loc_checked, nrow),
   removed_for_age = sapply(loc_checked, function(d) sum(!is.na(d$Age_Problem))),
   localities_kept = sapply(loc_kept, nrow),
+  kept_with_NALMA_ages = sapply(loc_kept, function(d) sum(d$.no_age)),
   kept_localities_without_fauna = no_fauna,
   fauna_records_linked = sapply(linked_by_period, nrow),
   row.names = NULL)
