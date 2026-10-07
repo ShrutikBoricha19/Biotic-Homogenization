@@ -2,7 +2,10 @@
 # STEP 4: CONFERENCE MAPS - SPATIAL, TEMPORAL AND SPATIO-TEMPORAL
 #
 # Maps of the sites used in the analyses: every FAUNMAP locality and PBDB
-# collection that has a time bin (Step 3c) and a spatial unit (Step 3).
+# collection that has a time bin (Step 3c), a spatial unit (Step 3) and, after
+# the sp./cf. resolution of Step 3d, at least one occurrence identified to
+# species (sites left with only family-level records are not drawn; set
+# 'only_sites_with_species' to FALSE to draw them).
 # Hawaii lies outside the map frame and Alaska is not drawn as a unit; sites
 # in Alaska, Hawaii and Canada north of 60 degrees N were removed in Step 3.
 # Every map has a numbered key beside it (unit number - name - number of sites).
@@ -23,9 +26,10 @@
 #     sites_per_unit_and_bin  heat map: sites per province and time bin
 #     sites_per_unit_and_bin_<level>.csv   the counts behind it
 #
-# Inputs: Outputs/3_stages/site_index.csv and time_bins.csv (Step 3c),
+# Inputs: Outputs/3d_resolved/ (Step 3d): site_index.csv, time_bins.csv,
+#           faunmap_fauna.csv, pbdb_occurrences.csv
 #         Outputs/3_spatial/spatial_layers.rds (Step 3).
-# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 3 and 3c.
+# Run the whole file (Ctrl+Shift+S in RStudio) after Steps 3, 3c and 3d.
 # Needs: dplyr, tidyr, ggplot2, sf, maps, patchwork (ggrepel optional, for labels).
 # =============================================================================
 
@@ -47,8 +51,11 @@ suppressMessages(sf_use_s2(FALSE))
 
 work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation_Chapter_1"
 
-site_index_file <- file.path("Outputs", "3_stages", "site_index.csv")
-time_bins_file  <- file.path("Outputs", "3_stages", "time_bins.csv")
+site_index_file <- file.path("Outputs", "3d_resolved", "site_index.csv")
+time_bins_file  <- file.path("Outputs", "3d_resolved", "time_bins.csv")
+fauna_file      <- file.path("Outputs", "3d_resolved", "faunmap_fauna.csv")
+pbdb_file       <- file.path("Outputs", "3d_resolved", "pbdb_occurrences.csv")
+only_sites_with_species <- TRUE   # draw only sites with >= 1 occurrence identified to species
 layers_file     <- file.path("Outputs", "3_spatial", "spatial_layers.rds")
 spatial_file    <- file.path("Outputs", "3_spatial", "sites_spatial.csv")   # fallback for provinces
 output_dir      <- file.path(work_dir, "Outputs", "4_maps")
@@ -94,7 +101,7 @@ st_titles    <- c(political = "Sites through time: states and provinces",
 
 read_text_csv <- function(file) {
   path <- file.path(work_dir, file)
-  if (!file.exists(path)) stop("File not found:\n  ", path, "\nRun Steps 3 and 3c first.")
+  if (!file.exists(path)) stop("File not found:\n  ", path, "\nRun Steps 3, 3c and 3d first.")
   df <- read.csv(path, check.names = FALSE, stringsAsFactors = FALSE, colClasses = "character",
                  na.strings = c("", "NA"), encoding = "UTF-8")
   names(df) <- trimws(sub("^[^A-Za-z0-9]+", "", names(df), useBytes = TRUE))
@@ -221,6 +228,25 @@ map_theme <- function() {
 cat("=== 1. READING INPUTS ===\n")
 site_index <- read_text_csv(site_index_file)
 time_bins  <- read_text_csv(time_bins_file)
+
+# Keep sites that still have at least one occurrence identified to species.
+if (only_sites_with_species) {
+  fauna_occ <- read_text_csv(fauna_file)
+  pbdb_occ  <- read_text_csv(pbdb_file)
+  pb_name <- pbdb_occ[[intersect(c("accepted_name", "identified_name"), names(pbdb_occ))[1]]]
+  is_species <- function(genus, species) {
+    !is.na(genus) & trimws(genus) != "" & !is.na(species) &
+      !grepl("^(sp|spp|indet)\\.?$", tolower(trimws(species))) & trimws(species) != ""
+  }
+  with_species <- unique(c(
+    with(fauna_occ, paste(Site_Key, Stage_Number)[is_species(Genus, Species)]),
+    with(pbdb_occ, paste(Site_Key, Stage_Number)[is_species(sub(" .*$", "", pb_name),
+                                                            ifelse(grepl(" ", pb_name), sub("^\\S+\\s+", "", pb_name), NA))])))
+  n_before <- nrow(site_index)
+  site_index <- site_index[paste(site_index$Site_Key, site_index$Stage_Number) %in% with_species, ]
+  cat(sprintf("  %d of %d site-bin records have an occurrence identified to species (the others are not drawn)\n",
+              nrow(site_index), n_before))
+}
 layers_path <- file.path(work_dir, layers_file)
 if (!file.exists(layers_path)) stop("File not found:\n  ", layers_path, "\nRun Step 3 (spatial binning) again.")
 layers <- readRDS(layers_path)
