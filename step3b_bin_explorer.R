@@ -172,7 +172,10 @@ cat("=== 1. READING SITES ===\n")
 site_index <- read_input(site_index_file)
 time_bins  <- read_input(time_bins_file)
 if (!"Physio_Province" %in% names(site_index)) {
-  stop("site_index.csv has no Physio_Province column. Run Step 3 (spatial binning) and then Step 3c.")
+  stop("site_index.csv has no Physio_Province column: it was written before the spatial step.\n",
+       "  File date: ", format(file.mtime(file.path(work_dir, site_index_file)), "%Y-%m-%d %H:%M"), "\n",
+       "  Run step3_spatial_binning.R (Step 3), then step3c_time_binning.R (Step 3c), then this script.\n",
+       "  (Do not use the old step3_stage_binning.R - delete it from your folder.)")
 }
 current_bounds <- sort(unique(as.numeric(c(time_bins$Older_Ma, time_bins$Younger_Ma))), decreasing = TRUE)
 

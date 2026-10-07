@@ -123,6 +123,12 @@ loc_raw   <- lapply(loc_files, read_input)
 fauna_raw <- lapply(fauna_files, read_input)
 pbdb_raw               <- read_input(pbdb_file)
 
+# The inputs must come from Step 3 (spatial binning), which adds these columns.
+if (!all(c("Country", "Physio_Province") %in% names(loc_raw[[1]]))) {
+  stop("The files in Outputs/3_spatial have no spatial columns (Country, Physio_Province).\n",
+       "  Run step3_spatial_binning.R (Step 3) first.")
+}
+
 # =============================================================================
 # 3. FIND THE COLUMNS WE NEED IN EACH FILE
 #
