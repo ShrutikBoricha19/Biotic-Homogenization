@@ -7,7 +7,12 @@
 #   Species          corrected "Genus species" name (Step 3d)
 #   Genus
 #   Site             site name (FAUNMAP SiteName / PBDB collection name)
-#   Site_Key         unique site identifier (as in Steps 3-4)
+#   Site_Key         master_data: the FAUNMAP analysis unit / PBDB collection
+#                    (as in Steps 3-4); master_data_unique: the LOCALITY (below)
+#   Locality_Key     the locality: one FAUNMAP Machine Number ("FAUNMAP | 3015")
+#                    or one PBDB collection. FAUNMAP splits some localities into
+#                    many analysis units (e.g. Vallecito Creek, ~800 stratigraphic
+#                    levels at one spot); these are ONE site from here on.
 #   Latitude, Longitude
 #   Max_Ma, Min_Ma, Midpoint_Ma   age range of the site and its midpoint
 #   Spatial_Bin      physiographic province (USA) / subregion (Canada)
@@ -23,7 +28,10 @@
 #
 # Outputs (Outputs/5_master_data/):
 #   master_data.csv / .xlsx           every occurrence (one row each)
-#   master_data_unique.csv / .xlsx    one row per species x site x time bin
+#   master_data_unique.csv / .xlsx    one row per species x LOCALITY x time bin
+#                                     (analysis units of a locality pooled; its
+#                                     Site_Key is the Locality_Key, so later steps
+#                                     count localities as sites)
 #   master_data_summary.csv           species, sites and occurrences per
 #                                     spatial bin and time bin
 #
@@ -131,8 +139,12 @@ master_data <- all_occ %>%
   mutate(Genus = paste0(toupper(substr(Genus, 1, 1)), tolower(substring(Genus, 2))),
          Epithet = sub("\\s.*$", "", Epithet),          # first word of the epithet
          Species = paste(Genus, Epithet),
-         Time_Bin_Label = time_bins$Bin_Label[match(Time_Bin, as.integer(time_bins$Bin_Number))]) %>%
-  select(Species, Genus, Site, Site_Key, Latitude, Longitude, Max_Ma, Min_Ma, Midpoint_Ma,
+         Time_Bin_Label = time_bins$Bin_Label[match(Time_Bin, as.integer(time_bins$Bin_Number))],
+         # Locality = FAUNMAP Machine Number (2nd field of "Period | Machine | Analysis unit") or PBDB collection
+         Locality_Key = ifelse(Source == "FAUNMAP",
+                               paste("FAUNMAP", vapply(strsplit(Site_Key, " | ", fixed = TRUE), `[`, "", 2), sep = " | "),
+                               Site_Key)) %>%
+  select(Species, Genus, Site, Site_Key, Locality_Key, Latitude, Longitude, Max_Ma, Min_Ma, Midpoint_Ma,
          Spatial_Bin, Physio_Division, State_Province, Country, Time_Bin, Time_Bin_Label,
          Original_Name, Name_Status, Source) %>%
   arrange(Time_Bin, Spatial_Bin, Site, Species)
@@ -143,28 +155,35 @@ if (any(!is.na(all_occ$Genus) & is_open(all_occ$Epithet))) {
   cat(sprintf("  NOTE: %d genus-level records (sp.) were still present and are left out.\n",
               sum(!is.na(all_occ$Genus) & is_open(all_occ$Epithet))))
 }
-cat(sprintf("  %d species | %d sites | names resolved in Step 3d: %d occurrences\n",
-            n_distinct(master_data$Species), n_distinct(master_data$Site_Key),
+cat(sprintf("  %d species | %d localities (%d FAUNMAP analysis units / PBDB collections) | names resolved in Step 3d: %d occurrences\n",
+            n_distinct(master_data$Species), n_distinct(master_data$Locality_Key), n_distinct(master_data$Site_Key),
             sum(master_data$Name_Status != "as identified")))
 
-# One row per species x site x time bin (repeated records of a species at a
-# site collapse into one).
+# One row per species x LOCALITY x time bin: the analysis units of one
+# locality that fall in the same time bin are pooled, and repeated records of a
+# species collapse into one. Site_Key is set to the locality, so that Steps 5b,
+# 6 and 8 count localities as sites. Ages: oldest maximum, youngest minimum and
+# mean midpoint of the pooled units.
 master_data_unique <- master_data %>%
-  group_by(Species, Site_Key, Time_Bin) %>%
+  group_by(Species, Locality_Key, Time_Bin) %>%
   summarise(n_occurrences = n(),
+            n_analysis_units = n_distinct(Site_Key),
             Name_Status = if (all(Name_Status == "as identified")) "as identified" else "includes resolved names",
-            across(c(Genus, Site, Latitude, Longitude, Max_Ma, Min_Ma, Midpoint_Ma, Spatial_Bin,
-                     Physio_Division, State_Province, Country, Time_Bin_Label, Source), first),
+            Max_Ma = max(Max_Ma, na.rm = TRUE), Min_Ma = min(Min_Ma, na.rm = TRUE),
+            Midpoint_Ma = mean(Midpoint_Ma, na.rm = TRUE),
+            across(c(Genus, Site, Latitude, Longitude, Spatial_Bin, Physio_Division, State_Province,
+                     Country, Time_Bin_Label, Source), first),
             .groups = "drop") %>%
-  select(Species, Genus, Site, Site_Key, Latitude, Longitude, Max_Ma, Min_Ma, Midpoint_Ma,
+  mutate(Site_Key = Locality_Key) %>%
+  select(Species, Genus, Site, Site_Key, Locality_Key, Latitude, Longitude, Max_Ma, Min_Ma, Midpoint_Ma,
          Spatial_Bin, Physio_Division, State_Province, Country, Time_Bin, Time_Bin_Label,
-         n_occurrences, Name_Status, Source) %>%
+         n_occurrences, n_analysis_units, Name_Status, Source) %>%
   arrange(Time_Bin, Spatial_Bin, Site, Species)
 
 master_data_summary <- master_data %>%
   group_by(Time_Bin, Time_Bin_Label, Spatial_Bin) %>%
-  summarise(n_species = n_distinct(Species), n_sites = n_distinct(Site_Key),
-            n_occurrences = n(), .groups = "drop") %>%
+  summarise(n_species = n_distinct(Species), n_sites = n_distinct(Locality_Key),
+            n_analysis_units = n_distinct(Site_Key), n_occurrences = n(), .groups = "drop") %>%
   arrange(Time_Bin, desc(n_sites))
 
 # Checks: every row has a species name, a site, a time bin and coordinates.
@@ -185,7 +204,7 @@ save_out(master_data_summary, "master_data_summary")
 
 cat("\n  Species and sites per time bin:\n")
 print(as.data.frame(master_data %>% group_by(Time_Bin) %>%
-                      summarise(species = n_distinct(Species), sites = n_distinct(Site_Key),
+                      summarise(species = n_distinct(Species), sites = n_distinct(Locality_Key),
                                 occurrences = n(), .groups = "drop")), row.names = FALSE)
 
 cat("\n=== STEP 5 COMPLETE ===\n")

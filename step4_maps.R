@@ -273,6 +273,15 @@ for (lv in names(unit_cols)) {
   site_index[[unit_cols[[lv]]]] <- ifelse(is.na(m), site_index[[unit_cols[[lv]]]], layer_units[m])
 }
 
+# Sites are localities: the analysis units of one FAUNMAP Machine Number (e.g.
+# the ~800 levels of Vallecito Creek) count once per time bin, as in Steps 5-8.
+site_index <- site_index %>%
+  mutate(Site_Key_Unit = Site_Key,
+         Site_Key = ifelse(Database == "FAUNMAP",
+                           paste("FAUNMAP", vapply(strsplit(Site_Key, " | ", fixed = TRUE), `[`, "", 2), sep = " | "),
+                           Site_Key)) %>%
+  distinct(Site_Key, Stage_Number, .keep_all = TRUE)
+
 time_bins <- time_bins %>%
   mutate(Bin_Number = as.integer(Bin_Number), Older_Ma = as.numeric(Older_Ma),
          Younger_Ma = as.numeric(Younger_Ma),

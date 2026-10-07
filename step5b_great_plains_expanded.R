@@ -177,6 +177,8 @@ prep <- function(df) {
 }
 master_out <- prep(master)
 unique_out <- prep(unique_md)
+# Sites are localities (Step 5): count Locality_Key where it exists.
+if ("Locality_Key" %in% names(master_out)) master_out <- master_out %>% mutate(Site_Key_Unit = Site_Key, Site_Key = Locality_Key)
 
 cl <- master_out %>% filter(Spatial_Bin_Original %in% source_province)
 cat(sprintf("  %s: %d sites (%d occurrences); west of the river: %d sites (%d occurrences) -> %s\n",

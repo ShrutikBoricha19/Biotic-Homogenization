@@ -40,8 +40,8 @@
 # or a magnetochron). A boundary cannot split sites with the same midpoint,
 # so some imbalance can remain whatever the scheme.
 #
-# Counting unit: distinct sites (database + site name) per province and bin,
-# as in the Step 7 sites-per-stage figure.
+# Counting unit: distinct localities per province and bin (a FAUNMAP Machine
+# Number with all its analysis units, or a PBDB collection), as in Steps 4-8.
 #
 # Inputs:  Outputs/3_stages/site_index.csv (Step 3c; holds each site's
 #          midpoint age and its Physio_Province from Step 3)
@@ -212,7 +212,10 @@ if (only_sites_with_species && file.exists(file.path(work_dir, records_file))) {
   rec_sites <- read_input(records_file) %>% distinct(Database, SiteName = trimws(SiteName))
   sites <- semi_join(sites, rec_sites, by = c("Database", "SiteName"))
 }
-sites <- mutate(sites, Site = paste(Database, SiteName, sep = " | "),
+# A site is a locality: one FAUNMAP Machine Number (all its analysis units) or one PBDB collection.
+sites <- mutate(sites, Site = ifelse(Database == "FAUNMAP",
+                                     paste("FAUNMAP", vapply(strsplit(Site_Key, " | ", fixed = TRUE), `[`, "", 2), sep = " | "),
+                                     Site_Key),
                 Province = factor(Province, levels = provinces))
 cat(sprintf("  %d site records (%d distinct sites) with a midpoint in the %d provinces\n",
             nrow(sites), n_distinct(sites$Site), length(provinces)))
