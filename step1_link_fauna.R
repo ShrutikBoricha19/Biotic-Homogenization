@@ -80,6 +80,8 @@ nalma_tolerance <- 0.5    # Myr
 simplify_name <- function(x) gsub("[^a-z0-9]", "", tolower(x))
 clean_text <- function(x) { x <- trimws(as.character(x)); x[x == ""] <- NA_character_; x }
 machine_key <- function(x) sub("^([0-9]+)\\.0+$", "\\1", clean_text(x))   # 1234.00 = 1234
+# Analysis Unit compared ignoring capitals and extra spaces ("Assemblage" = "assemblage ").
+analysis_key <- function(x) tolower(gsub("\\s+", " ", clean_text(x)))
 to_num <- function(x) suppressWarnings(as.numeric(clean_text(x)))
 to_coord <- function(x, limit) { v <- to_num(x); v[!is.na(v) & abs(v) > limit] <- NA; v }
 
@@ -152,7 +154,7 @@ loc_checked <- lapply(names(loc_raw), function(p) {
   fill <- nalma_ages[[p]]
   out <- df %>% mutate(
     FAUNMAP_Period = p,
-    .mk = machine_key(.data[[c_mach]]), .ak = clean_text(.data[[c_anal]]),
+    .mk = machine_key(.data[[c_mach]]), .ak = analysis_key(.data[[c_anal]]),
     .site = clean_text(.data[[c_site]]),
     .min = to_num(.data[[c_min]]), .max = to_num(.data[[c_max]]),
     .no_age = is.na(.min) & is.na(.max) & fill_no_age_from_nalma,
@@ -238,7 +240,7 @@ clash <- intersect(names(fauna), added)
 if (length(clash)) names(fauna)[names(fauna) %in% clash] <- paste0(clash, "_original")
 
 fauna_linked <- fauna %>%
-  mutate(.mk = machine_key(.data[[f_mach]]), .ak = clean_text(.data[[f_anal]])) %>%
+  mutate(.mk = machine_key(.data[[f_mach]]), .ak = analysis_key(.data[[f_anal]])) %>%
   left_join(loc_lookup, by = c(".mk", ".ak")) %>%
   left_join(all_pairs, by = c(".mk", ".ak")) %>%
   mutate(Match_Source = case_when(
@@ -269,7 +271,7 @@ print(as.data.frame(count(unmatched_fauna, Match_Source, sort = TRUE)), row.name
 no_fauna <- sapply(names(loc_kept), function(p) {
   k <- loc_kept[[p]]
   sum(!paste(k$.mk, k$.ak) %in% paste(linked_by_period[[p]][[f_mach]] %>% machine_key(),
-                                      clean_text(linked_by_period[[p]][[f_anal]])))
+                                      analysis_key(linked_by_period[[p]][[f_anal]])))
 })
 
 # =============================================================================

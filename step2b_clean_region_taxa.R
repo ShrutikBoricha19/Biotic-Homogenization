@@ -139,6 +139,8 @@ find_col <- function(df, options) {
 
 clean_text <- function(x) { x <- trimws(as.character(x)); x[x == ""] <- NA_character_; x }
 machine_key <- function(x) sub("^([0-9]+)\\.0+$", "\\1", clean_text(x))
+# Analysis Unit compared ignoring capitals and extra spaces ("Assemblage" = "assemblage ").
+analysis_key <- function(x) tolower(gsub("\\s+", " ", clean_text(x)))
 to_coord <- function(x, limit) {
   v <- suppressWarnings(as.numeric(clean_text(x)))
   v[!is.na(v) & abs(v) > limit] <- NA
@@ -146,9 +148,11 @@ to_coord <- function(x, limit) {
 }
 title_word <- function(x) {
   x <- clean_text(x)
-  ifelse(is.na(x), NA_character_,
-         paste0(toupper(substr(x, 1, 1)), tolower(substring(x, 2))))
+  as.character(ifelse(is.na(x), NA_character_,
+                      paste0(toupper(substr(x, 1, 1)), tolower(substring(x, 2)))))
 }
+# ifelse() that always returns text (also for empty tables).
+chr_ifelse <- function(test, yes, no) as.character(ifelse(test, yes, no))
 col_or_na <- function(df, col) if (is.na(col)) rep(NA_character_, nrow(df)) else df[[col]]
 
 lat_opts     <- c("latdd", "latitude", "lat")
@@ -165,6 +169,13 @@ site_opts    <- c("sitename", "collectionname")
 cat("=== 1. READING FILES ===\n")
 loc_raw   <- lapply(loc_files, read_input)
 fauna_raw <- lapply(fauna_files, read_input)
+for (p in names(fauna_raw)) {
+  if (nrow(fauna_raw[[p]]) == 0) {
+    cat(sprintf(paste0("  NOTE: %s has no fauna records - no faunalf.csv record matched a %s locality\n",
+                       "        in Step 1 (check Step 1's unmatched_fauna.csv). Its localities will be\n",
+                       "        removed as having no fauna.\n"), basename(fauna_files[[p]]), p))
+  }
+}
 pbdb_raw <- read_input(pbdb_file)
 order_lookup_raw <- read_input(order_lookup_file, required = FALSE)
 
@@ -224,7 +235,7 @@ loc <- lapply(names(loc_raw), function(p) {
   df %>% mutate(
     .period = p, .row = row_number(),
     .mk = machine_key(col_or_na(df, find_col(df, machine_opts))),
-    .ak = clean_text(col_or_na(df, find_col(df, analysis_opts))),
+    .ak = analysis_key(col_or_na(df, find_col(df, analysis_opts))),
     .site = clean_text(col_or_na(df, find_col(df, site_opts))),
     .lat = to_coord(col_or_na(df, c_lat), 90), .lon = to_coord(col_or_na(df, c_lon), 180),
     .region_xy = region_of(.lat, .lon),
@@ -299,9 +310,9 @@ flag_taxa <- function(df) {
     .family = title_word(col_or_na(df, c_family)),
     .genus = title_word(col_or_na(df, c_genus)),
     .binomial = coalesce(
-      ifelse(!is.na(.genus) & !is.na(clean_text(col_or_na(df, c_species))),
-             paste(.genus, sub("^.* ", "", lc(col_or_na(df, c_species)))), NA_character_),
-      clean_text(col_or_na(df, c_name))))
+      as.character(ifelse(!is.na(.genus) & !is.na(clean_text(col_or_na(df, c_species))),
+                          paste(.genus, sub("^.* ", "", lc(col_or_na(df, c_species)))), NA_character_)),
+      as.character(clean_text(col_or_na(df, c_name)))))
   if (is.na(c_genus)) {
     out$.genus <- title_word(sub(" .*$", "", out$.binomial))
   }
@@ -331,7 +342,7 @@ for (p in names(loc)) {
   L <- loc[[p]]
   F <- fauna_raw[[p]]
   f_mk <- machine_key(col_or_na(F, find_col(F, machine_opts)))
-  f_ak <- clean_text(col_or_na(F, find_col(F, analysis_opts)))
+  f_ak <- analysis_key(col_or_na(F, find_col(F, analysis_opts)))
   F <- F %>% mutate(.row = row_number(), .mk = f_mk, .ak = f_ak)
 
   # Region status of each fauna record: from its locality, else its own coordinates.
@@ -346,7 +357,7 @@ for (p in names(loc)) {
   }
   F <- flag_taxa(F)
   F <- F %>% mutate(.reason = case_when(
-    !region_keep(.loc_status) ~ ifelse(.loc_status == "outside", "site outside Canada/USA/Mexico",
+    !region_keep(.loc_status) ~ chr_ifelse(.loc_status == "outside", "site outside Canada/USA/Mexico",
                                        "site location unverified"),
     !is.na(.taxon_reason) ~ .taxon_reason,
     TRUE ~ NA_character_))
@@ -360,7 +371,7 @@ for (p in names(loc)) {
   has_fauna_before <- paste(L$.mk, L$.ak) %in% paste(F$.mk, F$.ak)
   has_fauna_after  <- paste(L$.mk, L$.ak) %in% paste(kept_F$.mk, kept_F$.ak)
   L <- L %>% mutate(.loc_reason = case_when(
-    !region_keep(.status) ~ ifelse(.status == "outside", "outside Canada/USA/Mexico", "location unverified"),
+    !region_keep(.status) ~ chr_ifelse(.status == "outside", "outside Canada/USA/Mexico", "location unverified"),
     drop_localities_without_fauna & !has_fauna_before ~ "no fauna records",
     drop_localities_without_fauna & !has_fauna_after ~ "no species left after removing marine mammals/bats",
     TRUE ~ NA_character_))
@@ -383,7 +394,7 @@ for (p in names(loc)) {
 }
 
 pbdb <- flag_taxa(pbdb) %>% mutate(.reason = case_when(
-  !region_keep(.status) ~ ifelse(.status == "outside", "site outside Canada/USA/Mexico", "site location unverified"),
+  !region_keep(.status) ~ chr_ifelse(.status == "outside", "site outside Canada/USA/Mexico", "site location unverified"),
   !is.na(.taxon_reason) ~ .taxon_reason,
   TRUE ~ NA_character_))
 kept_P <- filter(pbdb, is.na(.reason))
@@ -392,7 +403,7 @@ removed_records[["PBDB"]] <- pbdb %>% filter(!is.na(.reason)) %>%
             Family = .family, Reason = .reason)
 coll_after <- unique(kept_P$.coll)
 pbdb_sites <- pbdb_sites %>% mutate(.site_reason = case_when(
-  !region_keep(.status) ~ ifelse(.status == "outside", "outside Canada/USA/Mexico", "location unverified"),
+  !region_keep(.status) ~ chr_ifelse(.status == "outside", "outside Canada/USA/Mexico", "location unverified"),
   !.coll %in% coll_after ~ "no species left after removing marine mammals/bats",
   TRUE ~ NA_character_))
 removed_sites[["PBDB"]] <- pbdb_sites %>% filter(!is.na(.site_reason)) %>%

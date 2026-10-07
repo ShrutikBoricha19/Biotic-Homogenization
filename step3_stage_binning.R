@@ -192,6 +192,8 @@ clean_text <- function(x) {
 
 # 1234.00 and 1234 become the same key (as in Step 1).
 machine_key <- function(x) sub("^([0-9]+)\\.0+$", "\\1", clean_text(x))
+# Analysis Unit compared ignoring capitals and extra spaces ("Assemblage" = "assemblage ").
+analysis_key <- function(x) tolower(gsub("\\s+", " ", clean_text(x)))
 
 to_num <- function(x) suppressWarnings(as.numeric(clean_text(x)))
 
@@ -347,7 +349,7 @@ cat("\n=== 6. FAUNMAP FAUNA ===\n")
 
 locality_stage_lookup <- localities_all %>%
   filter(!is.na(Machine_Key), !is.na(Analysis_Key)) %>%
-  group_by(FAUNMAP_Period, .mk = Machine_Key, .ak = Analysis_Key) %>%
+  group_by(FAUNMAP_Period, .mk = Machine_Key, .ak = analysis_key(Analysis_Key)) %>%
   summarise(
     Site_Key = first(Site_Key),
     Pair_Locality_Rows = n(),
@@ -368,7 +370,7 @@ link_stage <- function(fauna, cols, period) {
   keyed <- fauna %>%
     mutate(
       .mk = machine_key(.data[[cols[["machine"]]]]),
-      .ak = clean_text(.data[[cols[["analysis"]]]])
+      .ak = analysis_key(.data[[cols[["analysis"]]]])
     )
 
   lookup <- locality_stage_lookup %>%
