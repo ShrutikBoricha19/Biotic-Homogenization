@@ -52,6 +52,9 @@
 #   partition_by_group.csv       Eqs. 4-6 for every diet group and size class
 #   regression_beta_sim_age.csv  OLS of beta_SIM on bin midpoint (as Rowan et al.)
 #   species_traits.csv           every species with order, mass, size class, diet
+#   species_functional_groups.xlsx  the same as a workbook: all species, by diet
+#                                group, by size class, diet x size counts,
+#                                unclassified species, notes
 #   unclassified_species.csv     large-mammal species without a diet or size class
 #   regional_pa_matrices.rds     the region x species matrices per bin
 #
@@ -60,7 +63,8 @@
 #         pbdb_occurrences.csv (Step 3d, for each genus's order),
 #         the fixed Smith et al. workbook (aao5987-smith-sm-137-190_fixed.xlsx).
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 5b.
-# Needs: dplyr, tidyr, ggplot2, readxl, patchwork (grid/gtable come with ggplot2).
+# Needs: dplyr, tidyr, ggplot2, readxl, patchwork (grid/gtable come with ggplot2);
+#        writexl for the Excel workbook.
 # Silhouettes: diet icons as in Step 8; size icons from game-icons.net (CC BY 3.0).
 # =============================================================================
 
@@ -445,14 +449,16 @@ if (!file.exists(smith_file)) {
 smith <- readxl::read_excel(smith_file, sheet = smith_sheet)
 cat(sprintf("  %-50s %7d rows\n", basename(smith_file), nrow(smith)))
 names(smith)[grepl("^Recoded diet", names(smith))] <- "Recoded_diet"
-smith <- smith %>% transmute(Order = trimws(Order), Species = trimws(gsub("\\s+", " ", Genus_species)),
+smith <- smith %>% transmute(Order = trimws(Order), Family = trimws(Family),
+                             Species = trimws(gsub("\\s+", " ", Genus_species)),
+                             Smith_Recoded_Diet = Recoded_diet, Smith_PBDB_Diet = `PBDB diet`,
                              key = tolower(Species), Genus = sub(" .*$", "", Species),
                              ln_mass = suppressWarnings(as.numeric(`ln Mass (g)`)),
                              Diet_Group = diet_group_of(Recoded_diet, `PBDB diet`)) %>%
   filter(!is.na(Species))
 smith_sp <- smith %>% filter(!duplicated(key))
 smith_gen <- smith %>% group_by(gkey = tolower(Genus)) %>%
-  summarise(Order_g = mode_of(Order), ln_mass_g = mean(ln_mass, na.rm = TRUE),
+  summarise(Order_g = mode_of(Order), Family_g = mode_of(Family), ln_mass_g = mean(ln_mass, na.rm = TRUE),
             Diet_g = mode_of(Diet_Group), .groups = "drop") %>%
   mutate(ln_mass_g = ifelse(is.nan(ln_mass_g), NA, ln_mass_g))
 
@@ -472,10 +478,12 @@ md <- md %>% filter(Spatial_Bin %in% regions) %>% mutate(Time_Bin = as.integer(T
 cat("\n=== 2. SPECIES TRAITS ===\n")
 traits <- md %>% distinct(Species) %>%
   mutate(key = tolower(Species), gkey = tolower(sub(" .*$", "", Species))) %>%
-  left_join(smith_sp %>% select(key, Order_s = Order, ln_mass_s = ln_mass, Diet_s = Diet_Group), by = "key") %>%
+  left_join(smith_sp %>% select(key, Order_s = Order, Family, ln_mass_s = ln_mass, Diet_s = Diet_Group,
+                                Smith_Recoded_Diet, Smith_PBDB_Diet), by = "key") %>%
   left_join(smith_gen, by = "gkey") %>%
   left_join(genus_order, by = "gkey") %>%
   mutate(Order = coalesce(Order_s, Order_data, Order_g),
+         Family = coalesce(Family, Family_g),
          ln_mass = coalesce(ln_mass_s, if (genus_fallback) ln_mass_g else NA_real_),
          Diet_Group = coalesce(Diet_s, if (genus_fallback) Diet_g else NA_character_),
          Mass_Source = case_when(!is.na(ln_mass_s) ~ "species (Smith et al.)",
@@ -510,7 +518,8 @@ traits <- traits %>%
                                is.na(Order) ~ "order unknown",
                                !Large_Order ~ paste("order", Order, "not a large-mammal order"),
                                TRUE ~ sprintf("body mass %.2f kg <= %g kg", Mass_kg, min_mass_kg))) %>%
-  select(Species, Order, Mass_kg, Size_Class, Diet_Group, Mass_Source, Diet_Source, Included, Exclusion) %>%
+  select(Species, Order, Family, Mass_kg, Size_Class, Diet_Group, Mass_Source, Diet_Source,
+         Smith_Recoded_Diet, Smith_PBDB_Diet, Included, Exclusion) %>%
   arrange(desc(Included), Order, Species)
 
 inc <- traits %>% filter(Included)
@@ -712,6 +721,58 @@ write_out(regression %>% mutate(across(everything(), ~ signif(.x, 4))), "regress
 write_out(traits %>% mutate(Mass_kg = round(Mass_kg, 3)), "species_traits")
 write_out(unclassified %>% mutate(Mass_kg = round(Mass_kg, 3)), "unclassified_species")
 saveRDS(pa_list, file.path(output_dir, "regional_pa_matrices.rds"))
+
+# ---- Excel workbook: every species with its diet group and body-size class ----
+# Where each species occurs (regions and time bins, from the master data).
+occurs <- md %>% filter(Species %in% traits$Species) %>%
+  group_by(Species) %>%
+  summarise(Regions = paste(intersect(regions, unique(Spatial_Bin)), collapse = "; "),
+            Time_Bins = paste(sort(unique(Time_Bin)), collapse = ", "),
+            n_localities = n_distinct(Site_Key), .groups = "drop")
+book_all <- traits %>% left_join(occurs, by = "Species") %>%
+  transmute(Species, Order, Family, `Body mass (kg)` = round(Mass_kg, 2), `Size class` = Size_Class,
+            `Diet group` = Diet_Group, `In the analyses (large mammal)` = ifelse(Included, "yes", "no"),
+            `Reason left out` = Exclusion, `Mass source` = Mass_Source, `Diet source` = Diet_Source,
+            `Smith et al. recoded diet` = Smith_Recoded_Diet, `Smith et al. PBDB diet` = Smith_PBDB_Diet,
+            Regions, `Time bins` = Time_Bins, `Localities` = n_localities)
+book_inc <- book_all %>% filter(`In the analyses (large mammal)` == "yes")
+by_diet <- book_inc %>%
+  mutate(`Diet group` = factor(coalesce(`Diet group`, "Unclassified"), levels = c(diet_groups, "Unclassified"))) %>%
+  arrange(`Diet group`, Species) %>% mutate(`Diet group` = as.character(`Diet group`)) %>%
+  select(`Diet group`, Species, Order, Family, `Body mass (kg)`, `Size class`, `Diet source`,
+         `Smith et al. recoded diet`, `Smith et al. PBDB diet`, Regions, `Time bins`)
+by_size <- book_inc %>%
+  mutate(`Size class` = factor(coalesce(`Size class`, "No body mass"), levels = c(size_groups, "No body mass"))) %>%
+  arrange(`Size class`, `Body mass (kg)`, Species) %>% mutate(`Size class` = as.character(`Size class`)) %>%
+  select(`Size class`, Species, Order, Family, `Body mass (kg)`, `Mass source`, `Diet group`, Regions, `Time bins`)
+cross <- book_inc %>%
+  mutate(Diet = factor(coalesce(`Diet group`, "Unclassified"), levels = c(diet_groups, "Unclassified")),
+         Size = factor(coalesce(`Size class`, "No body mass"), levels = c(size_groups, "No body mass"))) %>%
+  count(Diet, Size) %>% tidyr::pivot_wider(names_from = Size, values_from = n, values_fill = 0) %>%
+  mutate(Total = rowSums(across(where(is.numeric)))) %>% rename(`Diet group` = Diet) %>%
+  mutate(`Diet group` = as.character(`Diet group`))
+cross <- bind_rows(cross, cross %>% summarise(across(where(is.numeric), sum)) %>% mutate(`Diet group` = "Total"))
+notes <- data.frame(Notes = c(
+  "Species of the three regions (Basin and Range, Coastal Plain, Great Plains incl. Central Lowland west of the Mississippi).",
+  sprintf("'In the analyses' = large mammals as in Rowan et al. 2024: orders %s, body mass > %g kg.",
+          paste(large_mammal_orders, collapse = ", "), min_mass_kg),
+  "Body mass and diet: Smith et al. 2018 (Science, aao5987), Table S7 (fixed workbook). Mass = exp(ln mass) / 1000.",
+  "Size classes (Rowan et al.): Size 1 <18 kg, Size 2 18-80 kg, Size 3 80-350 kg, Size 4 350-1,000 kg, Size 5 >1,000 kg.",
+  paste0("Diet groups (Rowan et al.): carnivore (and insectivore) -> Carnivore; omnivore -> Omnivore; herbivore with grazer and ",
+         "browser/frugivore/folivore terms -> Mixed feeder; grazer only -> Grazer; browser/frugivore/folivore only -> Browser and frugivore."),
+  "Source columns: 'species' = the species's own row in Smith et al.; 'genus' = mean mass / most common diet of its genus there; 'hand assignment' = species_traits_overrides.csv.",
+  "Unclassified species can be given a diet group or mass in species_traits_overrides.csv (columns Species, Order, Mass_kg, Diet_Group); then run Step 7 again."))
+book <- list(`All species` = book_all, `By diet group` = by_diet, `By size class` = by_size,
+             `Diet x size (counts)` = cross, `Unclassified` = book_inc %>% filter(is.na(`Diet group`) | is.na(`Size class`)),
+             Notes = notes)
+book_path <- file.path(output_dir, "species_functional_groups.xlsx")
+if (requireNamespace("writexl", quietly = TRUE)) {
+  ok <- tryCatch({ writexl::write_xlsx(book, book_path); TRUE }, error = function(e) FALSE)
+  if (ok) cat(sprintf("  %-28s %6d species -> %s\n", "species_functional_groups", nrow(book_all), book_path))
+  else cat("  NOTE: could not write", book_path, "- close it in Excel and run again.\n")
+} else {
+  cat("  NOTE: install.packages(\"writexl\") to get species_functional_groups.xlsx (the CSV files have the same data).\n")
+}
 
 cat("\n=== STEP 7 COMPLETE ===\n")
 cat("Objects in your Environment: beta_by_bin, partition, traits, pa_list\n")
