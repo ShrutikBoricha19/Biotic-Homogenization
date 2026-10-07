@@ -3,12 +3,11 @@
 #
 # Each record is placed in ONE numbered time bin using the MIDPOINT of its
 # age range. Bins are 'bin_width' (0.75 Myr) long, from 'bin_start' (4.00 Ma)
-# to 'bin_end' (0.0117 Ma = end of the Late Pleistocene, 11,700 years ago);
-# Bin 1 starts at the round age of 4 Ma and is therefore 0.80 Myr long:
-#   Bin 1  4.00 - 3.20 Ma      Bin 4  1.70 - 0.95 Ma
-#   Bin 2  3.20 - 2.45 Ma      Bin 5  0.95 - 0.20 Ma
-#   Bin 3  2.45 - 1.70 Ma      Bin 6  0.20 - 0.0117 Ma (shorter: 0.19 Myr)
-# A boundary age belongs to the younger bin (e.g. 3.20 Ma = Bin 2); both
+# to 'bin_end' (0.0117 Ma = end of the Late Pleistocene, 11,700 years ago):
+#   Bin 1  4.00 - 3.25 Ma      Bin 4  1.75 - 1.00 Ma
+#   Bin 2  3.25 - 2.50 Ma      Bin 5  1.00 - 0.25 Ma
+#   Bin 3  2.50 - 1.75 Ma      Bin 6  0.25 - 0.0117 Ma (shorter: 0.24 Myr)
+# A boundary age belongs to the younger bin (e.g. 3.25 Ma = Bin 2); both
 # outer limits are included. The last bin is shorter than the others because
 # the interval ends at 0.0117 Ma; set 'merge_short_last_bin' to TRUE to join
 # it to the bin before it. The bins are saved to time_bins.csv, which every
@@ -57,8 +56,7 @@ save_excel <- TRUE    # also save .xlsx copies (skipped if writexl is not instal
 
 # Time bins.
 bin_width <- 0.75     # Myr
-bin_grid  <- 3.95     # Ma, where the 0.75-Myr steps start (3.95, 3.20, 2.45 ...)
-bin_start <- 4.00     # Ma, older limit of Bin 1 (extended by 0.05 Myr to the round age of 4 Ma)
+bin_start <- 4.00     # Ma, older limit of Bin 1 (steps: 4.00, 3.25, 2.50 ...)
 bin_end   <- 0.0117   # Ma, end of the Late Pleistocene (11,700 years ago)
 merge_short_last_bin <- FALSE   # TRUE: a last bin shorter than half the width joins the bin before it
 
@@ -67,8 +65,7 @@ remove_alaska      <- TRUE
 canada_north_limit <- 60      # degrees N; Canadian sites north of this are removed (NA = keep all)
 coast_buffer_km    <- 25      # sites in the sea this close to Alaska count as Alaska
 
-bin_bounds <- round(seq(bin_grid, bin_end, by = -bin_width), 6)
-bin_bounds[1] <- bin_start            # Bin 1 runs from 4.00 Ma, so it is 0.80 Myr long
+bin_bounds <- round(seq(bin_start, bin_end, by = -bin_width), 6)
 if (min(bin_bounds) > bin_end) bin_bounds <- c(bin_bounds, bin_end)
 if (merge_short_last_bin && length(bin_bounds) > 2) {
   n_b <- length(bin_bounds)
