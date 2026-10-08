@@ -17,8 +17,8 @@
 #   Fig. 2  Multisite Simpson dissimilarity beta_SIM of the three regions per
 #           time bin (Eq. 1).
 #   Fig. 3  beta_SIM additively partitioned into diet groups (a) and body size
-#           classes (b) (Eq. 4); the overall beta_SIM (grey points) with a LOESS
-#           curve (span = 0.75) and 95% confidence band in every panel.
+#           classes (b) (Eq. 4); the overall beta_SIM (blue points) with a LOESS
+#           curve (span = 0.75, wider when there are few bins) and 95% confidence band in every panel.
 #   Fig. 4  Proportions of shared (Eq. 6, top rows) and endemic (Eq. 5, bottom
 #           rows) species within diet groups (a) and size classes (b).
 #
@@ -37,7 +37,8 @@
 #     omnivore                            -> Omnivore
 #     herbivore + grazer and browser/frugivore/folivore terms -> Mixed feeder
 #     herbivore + grazer only             -> Grazer
-#     herbivore + browser/frugivore/folivore only -> Browser and frugivore
+#     herbivore + browser/frugivore/folivore only -> Browser (no frugivores in
+#     these data, so the group is called Browser)
 #     herbivore without these terms       -> unclassified
 #   A species not in the table takes the mean ln mass and the most common diet
 #   of its genus in the table (flagged in species_traits.csv). Anything can be
@@ -110,16 +111,25 @@ min_mass_kg    <- 1
 genus_fallback <- TRUE           # species missing from the table take their genus's values
 insectivore_as <- "Carnivore"    # Rowan et al. have no insectivore group
 
-diet_groups <- c("Carnivore", "Omnivore", "Browser and frugivore", "Mixed feeder", "Grazer")
+diet_groups <- c("Carnivore", "Omnivore", "Browser", "Mixed feeder", "Grazer")
 size_breaks <- c(0, 18, 80, 350, 1000, Inf)          # kg
 size_groups <- c("Size 1 (<18 kg)", "Size 2 (18-80 kg)", "Size 3 (80-350 kg)",
                  "Size 4 (350-1,000 kg)", "Size 5 (>1,000 kg)")
 
-# Colours matching Rowan et al.'s figures.
-diet_colours <- c("Carnivore" = "#E2633B", "Omnivore" = "#3F75A3", "Browser and frugivore" = "#8A57AF",
-                  "Mixed feeder" = "#A5D485", "Grazer" = "#EFA020")
-size_colours <- setNames(c("#F4F4F4", "#C9CAD2", "#9DA1AF", "#636A80", "#30384F"), size_groups)
-band_fill    <- "#E6EDF5"        # shading of alternate time bins
+# Colourblind-friendly colours, no greys or whites in the plots.
+# Diet groups: Okabe-Ito palette (checked for protan, deutan and tritan vision;
+# every panel is also labelled and carries an icon). Size classes: viridis
+# (ordered light -> dark from small to large; readable in all colour-vision types).
+diet_colours <- c("Carnivore" = "#D55E00", "Omnivore" = "#CC79A7", "Browser" = "#0072B2",
+                  "Mixed feeder" = "#009E73", "Grazer" = "#E69F00")
+size_colours <- setNames(c("#FDE725", "#5EC962", "#21918C", "#3B528B", "#440154"), size_groups)
+ink          <- "#1F2A44"        # text, axes, lines and outlines (dark navy instead of grey/black)
+ink_soft     <- "#3E4C6D"        # secondary text
+point_fill   <- "#F0E442"        # overall beta_SIM points (Okabe-Ito yellow, navy outline)
+ribbon_fill  <- "#56B4E9"        # LOESS 95% band
+strip_fill   <- "#D6E6F5"        # panel titles
+band_fill    <- "#F6EBD0"        # shading of alternate time bins (pale sand)
+page_fill    <- "white"          # figure background (change here, e.g. "#F7FAFD", for a tinted page)
 loess_span   <- 0.75
 
 # Figure size (inches) and look.
@@ -320,7 +330,7 @@ size_silhouette_paths <- c(
     "96 416 384 428 374 438 357 441 367 442 347 444 338 451 347;188 345 157 350 146 353 142 356",
     " 140 451 151 455 164 457 177 455 194 451")
 )
-diet_silhouette <- function(g) diet_silhouette_paths[[switch(g, "Browser and frugivore" = "Browser", g)]]
+diet_silhouette <- function(g) diet_silhouette_paths[[g]]
 
 
 # =============================================================================
@@ -346,8 +356,8 @@ write_out <- function(df, name) {
 }
 save_fig <- function(p, name, width, height) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  ggsave(file.path(output_dir, paste0(name, ".png")), p, width = width, height = height, dpi = fig_dpi, bg = "white")
-  ggsave(file.path(output_dir, paste0(name, ".pdf")), p, width = width, height = height, bg = "white",
+  ggsave(file.path(output_dir, paste0(name, ".png")), p, width = width, height = height, dpi = fig_dpi, bg = page_fill)
+  ggsave(file.path(output_dir, paste0(name, ".pdf")), p, width = width, height = height, bg = page_fill,
          device = if (capabilities("cairo")) cairo_pdf else pdf)
   cat(sprintf("  %s.png (+ .pdf)\n", file.path(output_dir, name)))
 }
@@ -362,7 +372,7 @@ diet_group_of <- function(recoded, pbdb) {
             r == "omnivore" ~ "Omnivore",
             r == "herbivore" & graze & brow ~ "Mixed feeder",
             r == "herbivore" & graze ~ "Grazer",
-            r == "herbivore" & brow ~ "Browser and frugivore",
+            r == "herbivore" & brow ~ "Browser",
             TRUE ~ NA_character_)
 }
 
@@ -605,15 +615,16 @@ bands <- time_bins %>% filter(Time_Bin %% 2 == 1)          # shade alternate bin
 x_breaks <- seq(floor(x_max), 0, by = -1)
 theme_rowan <- function() {
   theme_classic(base_size = base_size) +
-    theme(axis.line = element_line(colour = "grey25", linewidth = 0.4),
-          axis.ticks = element_line(colour = "grey25", linewidth = 0.4),
-          axis.text = element_text(colour = "grey15"),
-          axis.title = element_text(colour = "grey15"),
-          strip.background = element_rect(fill = "#E3E3E3", colour = "grey35", linewidth = 0.4),
-          strip.text = element_text(colour = "grey10", size = base_size * 0.9),
+    theme(axis.line = element_line(colour = ink, linewidth = 0.4),
+          axis.ticks = element_line(colour = ink, linewidth = 0.4),
+          axis.text = element_text(colour = ink),
+          axis.title = element_text(colour = ink),
+          strip.background = element_rect(fill = strip_fill, colour = ink_soft, linewidth = 0.4),
+          strip.text = element_text(colour = ink, size = base_size * 0.9),
           panel.spacing.x = unit(0.9, "lines"),
-          plot.tag = element_text(face = "bold", size = base_size * 1.3),
-          plot.background = element_rect(fill = "white", colour = NA))
+          plot.tag = element_text(face = "bold", size = base_size * 1.3, colour = ink),
+          panel.background = element_rect(fill = page_fill, colour = NA),
+          plot.background = element_rect(fill = page_fill, colour = NA))
 }
 band_layer <- geom_rect(data = bands, aes(xmin = Younger, xmax = Older, ymin = -Inf, ymax = Inf),
                         inherit.aes = FALSE, fill = band_fill, colour = NA)
@@ -623,21 +634,21 @@ beta_lab <- expression(beta[SIM])
 # ---- Fig. 2 ------------------------------------------------------------------
 p2 <- ggplot(beta_by_bin, aes(Mid, beta_SIM)) +
   band_layer +
-  geom_line(colour = "grey15", linewidth = 0.6) +
-  geom_point(shape = 21, fill = "white", colour = "grey10", size = 3.6, stroke = 0.8) +
+  geom_line(colour = ink, linewidth = 0.6) +
+  geom_point(shape = 21, fill = point_fill, colour = ink, size = 3.6, stroke = 0.8) +
   scale_x_reverse(breaks = unique(c(x_max, x_breaks)),                # older limit of Bin 1 (3.25) marked too
                   labels = function(v) sub("\\.?0+$", "", sprintf("%.2f", v))) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v),
                      expand = expansion(mult = c(0.02, 0.04))) +
   # right-hand guide, as in the paper: up = provincialism, down = homogenization
-  annotate("segment", x = -0.07 * x_max, xend = -0.07 * x_max, y = 0.53, yend = 0.98, colour = "grey15", linewidth = 0.5,
+  annotate("segment", x = -0.07 * x_max, xend = -0.07 * x_max, y = 0.53, yend = 0.98, colour = ink, linewidth = 0.5,
            arrow = arrow(length = unit(0.1, "in"), type = "open")) +
-  annotate("segment", x = -0.07 * x_max, xend = -0.07 * x_max, y = 0.47, yend = 0.02, colour = "grey15", linewidth = 0.5,
+  annotate("segment", x = -0.07 * x_max, xend = -0.07 * x_max, y = 0.47, yend = 0.02, colour = ink, linewidth = 0.5,
            arrow = arrow(length = unit(0.1, "in"), type = "open")) +
   annotate("text", x = -0.10 * x_max, y = 0.755, label = "Higher \u03b2 (provincialism)", angle = 90,
-           size = base_size / 4.1, colour = "grey15") +
+           size = base_size / 4.1, colour = ink) +
   annotate("text", x = -0.10 * x_max, y = 0.245, label = "Lower \u03b2 (homogenization)", angle = 90,
-           size = base_size / 4.1, colour = "grey15") +
+           size = base_size / 4.1, colour = ink) +
   coord_cartesian(xlim = c(x_max, x_min), clip = "off", expand = TRUE) +
   labs(x = "Age (Ma)", y = beta_lab) +
   theme_rowan() +
@@ -659,12 +670,12 @@ fig3_panel <- function(type, groups, colours, tag) {
   ggplot() +
     band_layer +
     do.call(geom_smooth, c(list(data = ov, mapping = aes(Mid, beta_SIM), se = TRUE, colour = NA,
-                                fill = "grey60", alpha = 0.40), smooth_args)) +
+                                fill = ribbon_fill, alpha = 0.30), smooth_args)) +
     geom_rect(data = d, aes(xmin = Mid - w / 2, xmax = Mid + w / 2, ymin = 0, ymax = beta_SIM_f, fill = Group),
-              colour = "grey25", linewidth = 0.25) +
-    do.call(geom_smooth, c(list(data = ov, mapping = aes(Mid, beta_SIM), se = FALSE, colour = "grey10",
+              colour = ink, linewidth = 0.25) +
+    do.call(geom_smooth, c(list(data = ov, mapping = aes(Mid, beta_SIM), se = FALSE, colour = ink,
                                 linewidth = 0.7), smooth_args)) +
-    geom_point(data = ov, aes(Mid, beta_SIM), shape = 21, fill = "white", colour = "grey20", size = 2.3, stroke = 0.6) +
+    geom_point(data = ov, aes(Mid, beta_SIM), shape = 21, fill = point_fill, colour = ink, size = 2.3, stroke = 0.6) +
     facet_wrap(~ Group, nrow = 1, drop = FALSE) +
     scale_fill_manual(values = colours, guide = "none", drop = FALSE) +
     x_scale +
@@ -675,7 +686,7 @@ fig3_panel <- function(type, groups, colours, tag) {
 }
 diet_icons <- lapply(diet_groups, function(g) icon_grob(diet_silhouette(g), diet_colours[[g]]))
 size_icons <- lapply(seq_along(size_groups), function(i)
-  icon_grob(size_silhouette_paths[[i]], size_colours[[i]], outline = if (i <= 2) "grey35" else NA))
+  icon_grob(size_silhouette_paths[[i]], size_colours[[i]], outline = if (i == 1) ink_soft else NA))
 g3a <- add_icons(fig3_panel("Diet", diet_groups, diet_colours, "a") + labs(x = NULL), diet_icons)
 g3b <- add_icons(fig3_panel("Size", size_groups, size_colours, "b"), size_icons)
 p3 <- patchwork::wrap_plots(patchwork::wrap_elements(g3a), patchwork::wrap_elements(g3b), ncol = 1)
@@ -696,9 +707,9 @@ fig4_panel <- function(type, groups, colours, tag) {
   ggplot(d) +
     band_layer +
     geom_rect(aes(xmin = Mid - w / 2, xmax = Mid + w / 2, ymin = 0, ymax = Proportion, fill = Group),
-              colour = "grey25", linewidth = 0.25) +
+              colour = ink, linewidth = 0.25) +
     geom_text(data = lab, aes(x = x_max - 0.1, y = y_top * 0.97, label = label), hjust = 0, vjust = 1,
-              size = base_size / 3.3, colour = "grey15") +
+              size = base_size / 3.3, colour = ink) +
     facet_grid(Component ~ Group, drop = FALSE) +
     scale_fill_manual(values = colours, guide = "none", drop = FALSE) +
     x_scale +
@@ -763,7 +774,7 @@ notes <- data.frame(Notes = c(
   "Body mass and diet: Smith et al. 2018 (Science, aao5987), Table S7 (fixed workbook). Mass = exp(ln mass) / 1000.",
   "Size classes (Rowan et al.): Size 1 <18 kg, Size 2 18-80 kg, Size 3 80-350 kg, Size 4 350-1,000 kg, Size 5 >1,000 kg.",
   paste0("Diet groups (Rowan et al.): carnivore (and insectivore) -> Carnivore; omnivore -> Omnivore; herbivore with grazer and ",
-         "browser/frugivore/folivore terms -> Mixed feeder; grazer only -> Grazer; browser/frugivore/folivore only -> Browser and frugivore."),
+         "browser/frugivore/folivore terms -> Mixed feeder; grazer only -> Grazer; browser/frugivore/folivore only -> Browser (no frugivores in these data)."),
   "Source columns: 'species' = the species's own row in Smith et al.; 'genus' = mean mass / most common diet of its genus there; 'hand assignment' = species_traits_overrides.csv.",
   "Unclassified species can be given a diet group or mass in species_traits_overrides.csv (columns Species, Order, Mass_kg, Diet_Group); then run Step 7 again."))
 book <- list(`All species` = book_all, `By diet group` = by_diet, `By size class` = by_size,

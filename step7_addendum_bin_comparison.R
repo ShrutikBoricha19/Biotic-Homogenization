@@ -70,7 +70,12 @@ common_n    <- FALSE      # TRUE = the same species count in every bin
 alpha       <- 0.05
 random_seed <- 2024
 
-band_fill <- "#E6EDF5"
+band_fill   <- "#F6EBD0"    # shading of alternate time bins (pale sand, as Fig. 2)
+# Colourblind-friendly colours, no greys or whites in the plots (as Step 7).
+ink         <- "#1F2A44"    # text, axes, lines and outlines (dark navy)
+ink_soft    <- "#3E4C6D"    # secondary text
+point_fill  <- "#F0E442"    # beta_SIM points (Okabe-Ito yellow, navy outline)
+page_fill   <- "white"      # figure background (change here, e.g. "#F7FAFD", for a tinted page)
 fig_w <- 9; fig_h <- 5.6; fig_dpi <- 300; base_size <- 14
 
 # =============================================================================
@@ -220,8 +225,8 @@ cat("  Difference = beta_SIM(A) - beta_SIM(B); A is the older bin.\n")
 cat("\n=== 4. FIGURES ===\n")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 save_fig <- function(p, name, w = fig_w, h = fig_h) {
-  ggsave(file.path(output_dir, paste0(name, ".png")), p, width = w, height = h, dpi = fig_dpi, bg = "white")
-  ggsave(file.path(output_dir, paste0(name, ".pdf")), p, width = w, height = h, bg = "white",
+  ggsave(file.path(output_dir, paste0(name, ".png")), p, width = w, height = h, dpi = fig_dpi, bg = page_fill)
+  ggsave(file.path(output_dir, paste0(name, ".pdf")), p, width = w, height = h, bg = page_fill,
          device = if (capabilities("cairo")) cairo_pdf else pdf)
   cat("  ", file.path(output_dir, paste0(name, ".png")), " (+ .pdf)\n", sep = "")
 }
@@ -243,19 +248,19 @@ succ <- tests %>% filter(Successive) %>%
 p1 <- ggplot(summ, aes(Mid, beta_SIM_mean)) +
   geom_rect(data = bands, aes(xmin = Younger, xmax = Older, ymin = -Inf, ymax = Inf),
             inherit.aes = FALSE, fill = band_fill, colour = NA) +
-  geom_errorbar(aes(ymin = lower95, ymax = upper95), width = 0.07, colour = "grey15", linewidth = 0.55) +
-  geom_line(colour = "grey15", linewidth = 0.6) +
-  geom_point(shape = 21, fill = "white", colour = "grey10", size = 3.6, stroke = 0.8) +
+  geom_errorbar(aes(ymin = lower95, ymax = upper95), width = 0.07, colour = ink, linewidth = 0.55) +
+  geom_line(colour = ink, linewidth = 0.6) +
+  geom_point(shape = 21, fill = point_fill, colour = ink, size = 3.6, stroke = 0.8) +
   geom_segment(data = succ, aes(x = xa, xend = xb, y = y, yend = y), inherit.aes = FALSE,
-               colour = "grey25", linewidth = 0.45) +
+               colour = ink, linewidth = 0.45) +
   geom_segment(data = succ, aes(x = xa, xend = xa, y = y, yend = y - 0.02), inherit.aes = FALSE,
-               colour = "grey25", linewidth = 0.45) +
+               colour = ink, linewidth = 0.45) +
   geom_segment(data = succ, aes(x = xb, xend = xb, y = y, yend = y - 0.02), inherit.aes = FALSE,
-               colour = "grey25", linewidth = 0.45) +
+               colour = ink, linewidth = 0.45) +
   geom_text(data = succ, aes((xa + xb) / 2, y + 0.035, label = lab), inherit.aes = FALSE,
-            size = base_size / 3.9, colour = "grey10", fontface = ifelse(succ$Significant, "bold", "plain")) +
+            size = base_size / 3.9, colour = ink, fontface = ifelse(succ$Significant, "bold", "plain")) +
   geom_text(data = bin_labels, aes(Mid, 0.02, label = lab), vjust = 0, inherit.aes = FALSE,
-            size = base_size / 4.3, colour = "grey30", lineheight = 0.9) +
+            size = base_size / 4.3, colour = ink_soft, lineheight = 0.9) +
   scale_x_reverse(breaks = c(x_max, seq(floor(x_max), 0, by = -1)),
                   labels = function(v) sub("\\.?0+$", "", sprintf("%.2f", v))) +
   scale_y_continuous(breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v)) +
@@ -266,12 +271,12 @@ p1 <- ggplot(summ, aes(Mid, beta_SIM_mean)) +
                         "\nerror bars = 95% CI. Brackets: successive bins; * p < 0.05, ** p < 0.01, *** p < 0.001 ",
                         "(Holm-corrected over all pairs);\nn.s. = not significant.")) +
   theme_classic(base_size = base_size) +
-  theme(axis.line = element_line(colour = "grey25", linewidth = 0.4),
-        axis.ticks = element_line(colour = "grey25", linewidth = 0.4),
-        axis.text = element_text(colour = "grey15"), axis.title = element_text(colour = "grey15"),
+  theme(axis.line = element_line(colour = ink, linewidth = 0.4),
+        axis.ticks = element_line(colour = ink, linewidth = 0.4),
+        axis.text = element_text(colour = ink), axis.title = element_text(colour = ink),
         axis.title.y = element_text(size = base_size * 1.15),
-        plot.caption = element_text(colour = "grey35", size = base_size * 0.62, hjust = 0),
-        plot.margin = margin(10, 15, 8, 10), plot.background = element_rect(fill = "white", colour = NA))
+        plot.caption = element_text(colour = ink_soft, size = base_size * 0.62, hjust = 0),
+        plot.margin = margin(10, 15, 8, 10), plot.background = element_rect(fill = page_fill, colour = NA))
 save_fig(p1, "Fig_bin_comparison_trend")
 
 # 4b. Matrix of Holm-corrected p for all pairs --------------------------------
@@ -284,20 +289,20 @@ mat <- tests %>%
          lab = sprintf("%+.2f\np = %s", diff_mean, fmt_p(p_holm)))
 
 p2 <- ggplot(mat, aes(col, row)) +
-  geom_tile(aes(fill = p_class), colour = "white", linewidth = 1.2) +
+  geom_tile(aes(fill = p_class), colour = page_fill, linewidth = 1.2) +
   geom_text(aes(label = lab, colour = p_class %in% c("< 0.001", "0.001-0.01")),
             size = base_size / 4.4, lineheight = 0.95) +
-  scale_fill_manual(values = c("< 0.001" = "#08306B", "0.001-0.01" = "#2E6DA4",
-                               "0.01-0.05" = "#8DB8DD", ">= 0.05 (n.s.)" = "#EDEFF2"),
+  scale_fill_manual(values = c("< 0.001" = "#08306B", "0.001-0.01" = "#2171B5",
+                               "0.01-0.05" = "#9ECAE1", ">= 0.05 (n.s.)" = "#FBE7A8"),
                     drop = FALSE, name = "Holm-corrected p") +
-  scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = "grey10"), guide = "none") +
+  scale_colour_manual(values = c(`TRUE` = "#FDF3C4", `FALSE` = ink), guide = "none") +
   labs(x = "Older bin (A)", y = "Younger bin (B)",
        caption = "Cell text: difference in beta_SIM (A - B) and Holm-corrected p. Positive = older bin more provincial.") +
   theme_minimal(base_size = base_size) +
-  theme(panel.grid = element_blank(), axis.text = element_text(colour = "grey15", size = base_size * 0.75),
-        axis.title = element_text(colour = "grey15"), legend.position = "right",
-        plot.caption = element_text(colour = "grey35", size = base_size * 0.62, hjust = 0),
-        plot.background = element_rect(fill = "white", colour = NA))
+  theme(panel.grid = element_blank(), axis.text = element_text(colour = ink, size = base_size * 0.75),
+        axis.title = element_text(colour = ink), legend.position = "right",
+        plot.caption = element_text(colour = ink_soft, size = base_size * 0.62, hjust = 0),
+        plot.background = element_rect(fill = page_fill, colour = NA))
 save_fig(p2, "Fig_bin_comparison_matrix", w = 8.5, h = 6.2)
 
 # =============================================================================

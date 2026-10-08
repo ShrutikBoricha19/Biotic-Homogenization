@@ -49,7 +49,12 @@ regions      <- c("Basin and Range", "Coastal Plain", "Great Plains")
 n_resamples  <- 999
 random_seed  <- 2024
 
-band_fill <- "#E6EDF5"     # shading of alternate time bins (as Fig. 2)
+band_fill   <- "#F6EBD0"    # shading of alternate time bins (pale sand, as Fig. 2)
+# Colourblind-friendly colours, no greys or whites in the plots (as Step 7).
+ink         <- "#1F2A44"    # text, axes, lines and outlines (dark navy)
+ink_soft    <- "#3E4C6D"    # secondary text
+point_fill  <- "#F0E442"    # beta_SIM points (Okabe-Ito yellow, navy outline)
+page_fill   <- "white"      # figure background (change here, e.g. "#F7FAFD", for a tinted page)
 fig_w <- 9; fig_h <- 5.2; fig_dpi <- 300; base_size <- 14
 
 # =============================================================================
@@ -135,20 +140,20 @@ bin_labels <- res %>% transmute(Mid, lab = paste0(sprintf("Bin %d\nn = %d", Disp
 p <- ggplot(res, aes(Mid, beta_SIM_mean)) +
   geom_rect(data = bands, aes(xmin = Younger, xmax = Older, ymin = -Inf, ymax = Inf),
             inherit.aes = FALSE, fill = band_fill, colour = NA) +
-  geom_errorbar(aes(ymin = beta_SIM_lower95, ymax = beta_SIM_upper95), width = 0.07, colour = "grey15", linewidth = 0.55) +
-  geom_line(colour = "grey15", linewidth = 0.6) +
-  geom_point(shape = 21, fill = "white", colour = "grey10", size = 3.6, stroke = 0.8) +
+  geom_errorbar(aes(ymin = beta_SIM_lower95, ymax = beta_SIM_upper95), width = 0.07, colour = ink, linewidth = 0.55) +
+  geom_line(colour = ink, linewidth = 0.6) +
+  geom_point(shape = 21, fill = point_fill, colour = ink, size = 3.6, stroke = 0.8) +
   geom_text(data = bin_labels, aes(Mid, 0.02, label = lab), vjust = 0, inherit.aes = FALSE, size = base_size / 4.3,
-            colour = "grey30", lineheight = 0.9) +
+            colour = ink_soft, lineheight = 0.9) +
   # right-hand guide, as in Fig. 2
-  annotate("segment", x = -0.24, xend = -0.24, y = 0.53, yend = 0.98, colour = "grey15", linewidth = 0.5,
+  annotate("segment", x = -0.24, xend = -0.24, y = 0.53, yend = 0.98, colour = ink, linewidth = 0.5,
            arrow = arrow(length = unit(0.1, "in"), type = "open")) +
-  annotate("segment", x = -0.24, xend = -0.24, y = 0.47, yend = 0.02, colour = "grey15", linewidth = 0.5,
+  annotate("segment", x = -0.24, xend = -0.24, y = 0.47, yend = 0.02, colour = ink, linewidth = 0.5,
            arrow = arrow(length = unit(0.1, "in"), type = "open")) +
   annotate("text", x = -0.34, y = 0.755, label = "Higher \u03b2 (provincialism)", angle = 90,
-           size = base_size / 4.1, colour = "grey15") +
+           size = base_size / 4.1, colour = ink) +
   annotate("text", x = -0.34, y = 0.245, label = "Lower \u03b2 (homogenization)", angle = 90,
-           size = base_size / 4.1, colour = "grey15") +
+           size = base_size / 4.1, colour = ink) +
   scale_x_reverse(breaks = c(x_max, seq(floor(x_max), 0, by = -1)), labels = function(v) sub("\\.?0+$", "", sprintf("%.2f", v))) +
   scale_y_continuous(breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v)) +
   coord_cartesian(xlim = c(x_max, 0), ylim = c(0, 1), clip = "off") +
@@ -156,16 +161,16 @@ p <- ggplot(res, aes(Mid, beta_SIM_mean)) +
        caption = sprintf(paste0("Each province subsampled to the species count of the poorest province (n).\n",
                                 "Points = mean of %d random draws; error bars = 95%% range of the draws."), n_resamples)) +
   theme_classic(base_size = base_size) +
-  theme(axis.line = element_line(colour = "grey25", linewidth = 0.4),
-        axis.ticks = element_line(colour = "grey25", linewidth = 0.4),
-        axis.text = element_text(colour = "grey15"), axis.title = element_text(colour = "grey15"),
+  theme(axis.line = element_line(colour = ink, linewidth = 0.4),
+        axis.ticks = element_line(colour = ink, linewidth = 0.4),
+        axis.text = element_text(colour = ink), axis.title = element_text(colour = ink),
         axis.title.y = element_text(size = base_size * 1.15),
-        plot.caption = element_text(colour = "grey35", size = base_size * 0.62, hjust = 0),
-        plot.margin = margin(10, 40, 8, 10), plot.background = element_rect(fill = "white", colour = NA))
+        plot.caption = element_text(colour = ink_soft, size = base_size * 0.62, hjust = 0),
+        plot.margin = margin(10, 40, 8, 10), plot.background = element_rect(fill = page_fill, colour = NA))
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-ggsave(file.path(output_dir, "Fig2_equal_species.png"), p, width = fig_w, height = fig_h, dpi = fig_dpi, bg = "white")
-ggsave(file.path(output_dir, "Fig2_equal_species.pdf"), p, width = fig_w, height = fig_h, bg = "white",
+ggsave(file.path(output_dir, "Fig2_equal_species.png"), p, width = fig_w, height = fig_h, dpi = fig_dpi, bg = page_fill)
+ggsave(file.path(output_dir, "Fig2_equal_species.pdf"), p, width = fig_w, height = fig_h, bg = page_fill,
        device = if (capabilities("cairo")) cairo_pdf else pdf)
 cat("  ", file.path(output_dir, "Fig2_equal_species.png"), " (+ .pdf)\n", sep = "")
 
