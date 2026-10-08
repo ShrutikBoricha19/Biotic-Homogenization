@@ -17,11 +17,13 @@
 #   Fig. 2  Multisite Simpson dissimilarity beta_SIM of the three regions per
 #           time bin (Eq. 1).
 #   Fig. 3  beta_SIM additively partitioned into diet groups (a) and body size
-#           classes (b) (Eq. 4); the overall beta_SIM per bin (yellow points joined
-#           by straight lines, no smoothing) in every panel.
+#           classes (b) (Eq. 4); the equal-species beta_SIM per bin (every region
+#           cut to the poorest region's species count, mean of 'equal_draws'
+#           random draws, as in step7_addendum_equal_species.R; yellow points
+#           joined by straight lines) in every panel. The bars use all species.
 #   Fig. 4  Proportions of shared (Eq. 6, top rows) and endemic (Eq. 5, bottom
-#           rows) species within diet groups (a) and size classes (b); the overall
-#           beta_SIM per bin (yellow points, straight lines) in every panel.
+#           rows) species within diet groups (a) and size classes (b); the
+#           equal-species beta_SIM curve (as Fig. 3) in every panel.
 #
 # Species included (as Rowan et al.): large mammals - species of
 # 'large_mammal_orders' heavier than 'min_mass_kg' (1 kg). Species of these
@@ -129,6 +131,8 @@ ink_soft     <- "#3E4C6D"        # secondary text
 point_fill   <- "#F0E442"        # overall beta_SIM points (Okabe-Ito yellow, navy outline)
 strip_fill   <- "#D6E6F5"        # panel titles
 band_fill    <- "#F6EBD0"        # shading of alternate time bins (pale sand)
+equal_draws  <- 999            # Figs. 3-4 curve: random draws per bin, as step7_addendum_equal_species.R
+equal_seed   <- 2024           #   (same seed and method, so the values match the addendum exactly)
 page_fill    <- "white"          # figure background (change here, e.g. "#F7FAFD", for a tinted page)
 
 # Figure size (inches) and look.
@@ -608,6 +612,29 @@ cat(sprintf("  OLS beta_SIM ~ midpoint age: r2 = %.2f, P = %.3g (slope %.3f per 
 # 4. FIGURES
 # =============================================================================
 
+# Equal-species beta_SIM (the curve of Figs. 3 and 4): in each bin every region
+# is cut to the species count of the poorest region by random draws and the
+# mean beta_SIM of 'equal_draws' draws is taken (as in the Step 7 addendum).
+set.seed(equal_seed)
+equal_beta <- bind_rows(lapply(names(pa_list), function(b) {
+  x <- pa_list[[b]]
+  sp_lists <- lapply(seq_len(nrow(x)), function(i) colnames(x)[x[i, ] == 1])
+  n_min <- min(lengths(sp_lists))
+  draws <- replicate(equal_draws, {
+    picks <- lapply(sp_lists, function(s) if (length(s) > n_min) sample(s, n_min) else s)
+    spp <- sort(unique(unlist(picks)))
+    m <- t(vapply(picks, function(s) as.integer(spp %in% s), integer(length(spp))))
+    colnames(m) <- spp
+    beta_sim(m)
+  })
+  data.frame(Time_Bin = as.integer(b), n_species_equal = n_min, beta_SIM_equal_species = mean(draws))
+}))
+beta_by_bin <- beta_by_bin %>% left_join(equal_beta, by = "Time_Bin")
+cat("  Equal-species beta_SIM (curve of Figs. 3-4):\n")
+print(as.data.frame(beta_by_bin %>% transmute(Time_Bin, n_species_equal,
+                                              beta_SIM_equal_species = round(beta_SIM_equal_species, 3))),
+      row.names = FALSE)
+
 cat("\n=== 4. FIGURES ===\n")
 x_max <- max(time_bins$Older); x_min <- 0
 bands <- time_bins %>% filter(Time_Bin %% 2 == 1)          # shade alternate bins, as in the paper
@@ -655,7 +682,7 @@ p2 <- ggplot(beta_by_bin, aes(Mid, beta_SIM)) +
 save_fig(p2, "Fig2_beta_sim", fig2_w, fig2_h)
 
 # ---- Fig. 3 ------------------------------------------------------------------
-overall_pts <- beta_by_bin %>% select(Mid, beta_SIM)
+overall_pts <- beta_by_bin %>% select(Mid, beta_SIM = beta_SIM_equal_species)   # equal-species curve
 fig3_panel <- function(type, groups, colours, tag) {
   d <- partition %>% filter(Group_Type == type) %>% mutate(Group = factor(Group, levels = groups))
   ov <- tidyr::crossing(overall_pts, Group = factor(groups, levels = groups))
@@ -701,7 +728,7 @@ fig4_panel <- function(type, groups, colours, tag) {
     band_layer +
     geom_rect(aes(xmin = Mid - w / 2, xmax = Mid + w / 2, ymin = 0, ymax = Proportion, fill = Group),
               colour = ink, linewidth = 0.25) +
-    geom_line(data = ov, aes(Mid, beta_SIM), colour = ink, linewidth = 0.7) +   # overall beta_SIM, as Fig. 3
+    geom_line(data = ov, aes(Mid, beta_SIM), colour = ink, linewidth = 0.7) +   # equal-species beta_SIM, as Fig. 3
     geom_point(data = ov, aes(Mid, beta_SIM), shape = 21, fill = point_fill, colour = ink, size = 2.3, stroke = 0.6) +
     geom_text(data = lab, aes(x = x_max - 0.1, y = y_top * 0.98, label = label), hjust = 0, vjust = 1,
               size = base_size / 3.3, colour = ink) +
