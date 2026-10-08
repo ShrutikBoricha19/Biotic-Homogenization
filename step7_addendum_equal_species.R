@@ -12,7 +12,7 @@
 #
 #   Points      mean beta_SIM of the random draws
 #   Error bars  95% range of the draws (2.5th-97.5th percentiles)
-#   Brackets    p value for the difference between successive time bins
+#   p (above n) p value for the difference from the previous (older) time bin
 #
 # p values: the error bars only show how beta_SIM changes with WHICH species
 # are drawn, not how it would change if a different set of sites had been
@@ -71,7 +71,7 @@ ink         <- "#1F2A44"    # text, axes, lines and outlines (dark navy)
 ink_soft    <- "#3E4C6D"    # secondary text
 point_fill  <- "#F0E442"    # beta_SIM points (Okabe-Ito yellow, navy outline)
 page_fill   <- "white"      # figure background (change here, e.g. "#F7FAFD", for a tinted page)
-fig_w <- 9; fig_h <- 6; fig_dpi <- 300; base_size <- 14
+fig_w <- 9; fig_h <- 5.6; fig_dpi <- 300; base_size <- 14
 
 # =============================================================================
 # HELPERS
@@ -209,14 +209,15 @@ cat("  Difference = beta_SIM(older bin) - beta_SIM(younger bin).\n")
 cat("\n=== 3. FIGURE ===\n")
 x_max <- max(time_bins$Older)
 bands <- time_bins %>% filter(Display_Bin %% 2 == 1)
-bin_labels <- res %>% transmute(Mid, lab = paste0(sprintf("Bin %d\nn = %d", Display_Bin, n_species_used),
-                                                  ifelse(n_provinces < length(regions), sprintf("\n(%d provinces)", n_provinces), "")))
-brk <- tests %>%
-  left_join(res %>% select(Bin_A = Display_Bin, xa = Mid), by = "Bin_A") %>%
-  left_join(res %>% select(Bin_B = Display_Bin, xb = Mid), by = "Bin_B") %>%
-  mutate(y = ifelse(row_number() %% 2 == 1, 1.06, 1.15),       # alternate heights so brackets do not join
-         xa = xa - 0.03 * sign(xa - xb), xb = xb + 0.03 * sign(xa - xb),
-         lab = trimws(paste(fmt_p(p_holm), stars(p_holm))))
+# Column labels (bottom up): n, p against the previous (older) bin, bin name.
+bin_labels <- res %>%
+  left_join(tests %>% transmute(Display_Bin = Bin_B, p_holm, Significant), by = "Display_Bin") %>%
+  transmute(Mid,
+            bin_lab = paste0("Bin ", Display_Bin,
+                             ifelse(n_provinces < length(regions), sprintf(" (%d provinces)", n_provinces), "")),
+            p_lab = ifelse(is.na(p_holm), "", trimws(paste(fmt_p(p_holm), stars(p_holm)))),
+            p_bold = Significant %in% TRUE,
+            n_lab = sprintf("n = %d", n_species_used))
 
 p <- ggplot(res, aes(Mid, beta_SIM_mean)) +
   geom_rect(data = bands, aes(xmin = Younger, xmax = Older, ymin = -Inf, ymax = Inf),
@@ -224,13 +225,12 @@ p <- ggplot(res, aes(Mid, beta_SIM_mean)) +
   geom_errorbar(aes(ymin = beta_SIM_lower95, ymax = beta_SIM_upper95), width = 0.07, colour = ink, linewidth = 0.55) +
   geom_line(colour = ink, linewidth = 0.6) +
   geom_point(shape = 21, fill = point_fill, colour = ink, size = 3.6, stroke = 0.8) +
-  geom_segment(data = brk, aes(x = xa, xend = xb, y = y, yend = y), inherit.aes = FALSE, colour = ink, linewidth = 0.45) +
-  geom_segment(data = brk, aes(x = xa, xend = xa, y = y, yend = y - 0.02), inherit.aes = FALSE, colour = ink, linewidth = 0.45) +
-  geom_segment(data = brk, aes(x = xb, xend = xb, y = y, yend = y - 0.02), inherit.aes = FALSE, colour = ink, linewidth = 0.45) +
-  geom_text(data = brk, aes((xa + xb) / 2, y + 0.035, label = lab), inherit.aes = FALSE,
-            size = base_size / 4.4, colour = ink, fontface = ifelse(brk$Significant, "bold", "plain")) +
-  geom_text(data = bin_labels, aes(Mid, 0.02, label = lab), vjust = 0, inherit.aes = FALSE, size = base_size / 4.3,
-            colour = ink_soft, lineheight = 0.9) +
+  geom_text(data = bin_labels, aes(Mid, 0.02, label = n_lab), vjust = 0, inherit.aes = FALSE,
+            size = base_size / 4.3, colour = ink_soft) +
+  geom_text(data = bin_labels, aes(Mid, 0.065, label = p_lab), vjust = 0, inherit.aes = FALSE,
+            size = base_size / 4.3, colour = ink, fontface = ifelse(bin_labels$p_bold, "bold", "plain")) +
+  geom_text(data = bin_labels, aes(Mid, 0.11, label = bin_lab), vjust = 0, inherit.aes = FALSE,
+            size = base_size / 4.3, colour = ink_soft) +
   # right-hand guide, as in Fig. 2
   annotate("segment", x = -0.24, xend = -0.24, y = 0.53, yend = 0.98, colour = ink, linewidth = 0.5,
            arrow = arrow(length = unit(0.1, "in"), type = "open")) +
@@ -242,10 +242,10 @@ p <- ggplot(res, aes(Mid, beta_SIM_mean)) +
            size = base_size / 4.1, colour = ink) +
   scale_x_reverse(breaks = c(x_max, seq(floor(x_max), 0, by = -1)), labels = function(v) sub("\\.?0+$", "", sprintf("%.2f", v))) +
   scale_y_continuous(breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v)) +
-  coord_cartesian(xlim = c(x_max, 0), ylim = c(0, 1.2), clip = "off") +
+  coord_cartesian(xlim = c(x_max, 0), ylim = c(0, 1), clip = "off") +
   labs(x = "Age (Ma)", y = expression(beta[SIM]),
        caption = sprintf(paste0("Each province subsampled to the species count of the poorest province (n). Points = mean of %d random draws;\n",
-                                "error bars = 95%% range of the draws. Brackets: p for the difference between successive bins\n",
+                                "error bars = 95%% range of the draws. p (above n) = difference from the previous, older bin\n",
                                 "(bootstrap of sites, then equal species; %d iterations; Holm-corrected).\n",
                                 "Bold with * p < 0.05, ** p < 0.01, *** p < 0.001 = significant."), n_resamples, n_boot)) +
   theme_classic(base_size = base_size) +
