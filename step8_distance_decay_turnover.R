@@ -35,6 +35,9 @@
 #   distance_decay_stats.csv, turnover_nestedness.csv, sites_species_per_bin.csv
 #   site_pairs.csv                       every site pair: distance and similarity
 #
+# Time bins are read from time_bins.csv (Step 3c: five 0.75-Myr bins from
+# 3.25 Ma, Bin 1 = 3.25-2.50 Ma); figures adapt to the number of bins.
+#
 # Inputs: Outputs/5b_great_plains/master_data_unique.csv (Step 5b),
 #         Outputs/3d_resolved/time_bins.csv, Outputs/7_rowan_figures/species_traits.csv (Step 7).
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 7.
@@ -153,6 +156,16 @@ time_bins <- read_text_csv(bins_file) %>%
   arrange(Time_Bin) %>%
   mutate(Bin_Label = sprintf("Bin %d\n%s-%s Ma", Time_Bin, fmt_age(Older), fmt_age(Younger)),
          Bin_Short = sprintf("Bin %d (%s-%s Ma)", Time_Bin, fmt_age(Older), fmt_age(Younger)))
+cat(sprintf("  %d time bins: %s\n", nrow(time_bins), paste(time_bins$Bin_Short, collapse = ", ")))
+
+# The master data must use the same bins as time_bins.csv (e.g. after the
+# 4.00-3.25 Ma bin was dropped, Steps 3c-5b must be rerun before this step).
+stale_bins <- setdiff(unique(md$Time_Bin), time_bins$Time_Bin)
+if (length(stale_bins) > 0) {
+  stop("master_data_unique.csv holds time bin(s) ", paste(sort(stale_bins), collapse = ", "),
+       " that are not in time_bins.csv (", nrow(time_bins), " bins).\n",
+       "  The inputs are out of date: rerun Steps 3c, 3d, 5, 5b, 6 and 7, then this step.")
+}
 
 if (large_mammals_only) {
   tr <- read_text_csv(traits_file)
@@ -271,7 +284,7 @@ p_dd <- ggplot(pp, aes(Distance_km, Similarity)) +
        caption = sprintf("Mantel test: Pearson correlation between Simpson dissimilarity and distance, %d permutations; positive r = similarity decays with distance.", n_perm)) +
   theme_fig() +
   theme(axis.text.x = element_text(size = base_size * 0.62, angle = 30, hjust = 1))
-save_fig(p_dd, "distance_decay", 16, 9)
+save_fig(p_dd, "distance_decay", 3.5 + 2.5 * nrow(time_bins), 9)          # 16 in wide for 5 bins
 
 # ---- 3b. turnover vs nestedness ----
 bpl <- as_facets(bp) %>%
@@ -305,7 +318,7 @@ p_bp <- ggplot() +
   theme_fig() +
   theme(legend.position = "top", legend.text = element_text(size = base_size * 0.9),
         axis.text.x = element_text(size = base_size * 0.85), panel.grid.major.x = element_blank())
-save_fig(p_bp, "turnover_nestedness", 16, 7)
+save_fig(p_bp, "turnover_nestedness", 6 + 2 * nrow(time_bins), 7)        # 16 in wide for 5 bins
 
 # ---- 3c. sites and species per time bin, all provinces ----
 cs <- counts %>%
