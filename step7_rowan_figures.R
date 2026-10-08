@@ -51,7 +51,9 @@
 #
 # Outputs (Outputs/7_rowan_figures/):
 #   Fig2_beta_sim.png/.pdf, Fig3_partitioned_beta_sim.png/.pdf,
-#   Fig4_shared_endemic.png/.pdf   (300 dpi PNG and vector PDF)
+#   Fig4_shared_endemic.png/.pdf   (300 dpi PNG and vector PDF; curve = equal-species beta_SIM)
+#   Fig3_partitioned_beta_sim_full_data, Fig4_shared_endemic_full_data
+#                                  the same with the full-data beta_SIM curve (as Fig. 2)
 #   beta_sim_by_bin.csv          beta_SIM, endemic and shared components per bin
 #   partition_by_group.csv       Eqs. 4-6 for every diet group and size class
 #   regression_beta_sim_age.csv  OLS of beta_SIM on bin midpoint (as Rowan et al.)
@@ -682,10 +684,13 @@ p2 <- ggplot(beta_by_bin, aes(Mid, beta_SIM)) +
 save_fig(p2, "Fig2_beta_sim", fig2_w, fig2_h)
 
 # ---- Fig. 3 ------------------------------------------------------------------
+# Two versions of Figs. 3 and 4: curve = equal-species beta_SIM (main files) or
+# the full-data beta_SIM of Fig. 2 (files ending in _full_data).
 overall_pts <- beta_by_bin %>% select(Mid, beta_SIM = beta_SIM_equal_species)   # equal-species curve
-fig3_panel <- function(type, groups, colours, tag) {
+full_pts    <- beta_by_bin %>% select(Mid, beta_SIM)                            # all species (as Fig. 2)
+fig3_panel <- function(type, groups, colours, tag, curve = overall_pts) {
   d <- partition %>% filter(Group_Type == type) %>% mutate(Group = factor(Group, levels = groups))
-  ov <- tidyr::crossing(overall_pts, Group = factor(groups, levels = groups))
+  ov <- tidyr::crossing(curve, Group = factor(groups, levels = groups))
   bw <- time_bins %>% transmute(Mid, w = (Older - Younger) * 0.8)
   d <- d %>% left_join(bw, by = "Mid") %>% filter(beta_SIM_f > 0)   # no bar where the group adds nothing
   ggplot() +
@@ -709,9 +714,13 @@ g3a <- add_icons(fig3_panel("Diet", diet_groups, diet_colours, "a") + labs(x = N
 g3b <- add_icons(fig3_panel("Size", size_groups, size_colours, "b"), size_icons)
 p3 <- patchwork::wrap_plots(patchwork::wrap_elements(g3a), patchwork::wrap_elements(g3b), ncol = 1)
 save_fig(p3, "Fig3_partitioned_beta_sim", fig3_w, fig3_h)
+g3a_full <- add_icons(fig3_panel("Diet", diet_groups, diet_colours, "a", full_pts) + labs(x = NULL), diet_icons)
+g3b_full <- add_icons(fig3_panel("Size", size_groups, size_colours, "b", full_pts), size_icons)
+save_fig(patchwork::wrap_plots(patchwork::wrap_elements(g3a_full), patchwork::wrap_elements(g3b_full), ncol = 1),
+         "Fig3_partitioned_beta_sim_full_data", fig3_w, fig3_h)
 
 # ---- Fig. 4 ------------------------------------------------------------------
-fig4_panel <- function(type, groups, colours, tag) {
+fig4_panel <- function(type, groups, colours, tag, curve = overall_pts) {
   d <- partition %>% filter(Group_Type == type) %>%
     select(Mid, Group, Shared = beta_SIM_SH_f, Endemic = beta_SIM_END_f) %>%
     pivot_longer(c(Shared, Endemic), names_to = "Component", values_to = "Proportion") %>%
@@ -719,7 +728,7 @@ fig4_panel <- function(type, groups, colours, tag) {
     left_join(time_bins %>% transmute(Mid, w = (Older - Younger) * 0.8), by = "Mid")
   y_top <- 1.2                                                       # room for beta_SIM (0-1) and the row labels
   d <- d %>% filter(Proportion > 0)                                  # no bar where the proportion is 0
-  ov <- tidyr::crossing(overall_pts, Group = factor(groups, levels = groups),
+  ov <- tidyr::crossing(curve, Group = factor(groups, levels = groups),
                         Component = factor(c("Shared", "Endemic"), levels = c("Shared", "Endemic")))
   lab <- data.frame(Group = factor(groups[1], levels = groups),
                     Component = factor(c("Shared", "Endemic"), levels = c("Shared", "Endemic")),
@@ -746,6 +755,10 @@ g4a <- add_icons(fig4_panel("Diet", diet_groups, diet_colours, "a"), diet_icons,
 g4b <- add_icons(fig4_panel("Size", size_groups, size_colours, "b"), size_icons, row = 1)
 p4 <- patchwork::wrap_plots(patchwork::wrap_elements(g4a), patchwork::wrap_elements(g4b), ncol = 1)
 save_fig(p4, "Fig4_shared_endemic", fig4_w, fig4_h)
+g4a_full <- add_icons(fig4_panel("Diet", diet_groups, diet_colours, "a", full_pts), diet_icons, row = 1)
+g4b_full <- add_icons(fig4_panel("Size", size_groups, size_colours, "b", full_pts), size_icons, row = 1)
+save_fig(patchwork::wrap_plots(patchwork::wrap_elements(g4a_full), patchwork::wrap_elements(g4b_full), ncol = 1),
+         "Fig4_shared_endemic_full_data", fig4_w, fig4_h)
 
 # =============================================================================
 # 5. TABLES
