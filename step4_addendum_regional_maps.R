@@ -59,9 +59,12 @@ rivers_url   <- paste0("https://raw.githubusercontent.com/nvkelso/natural-earth-
 rivers_local <- NA                # or the path of a local copy of that file
 show_river   <- TRUE              # draw the Mississippi
 
-# Colourblind-friendly (Okabe-Ito); pale tints for the provinces, full colours for the sites.
-region_fill <- c("Basin and Range" = "#F6DCA8", "Coastal Plain" = "#C9E4F6", "Great Plains" = "#B9E2CF")
-site_fill   <- c("Basin and Range" = "#E69F00", "Coastal Plain" = "#0072B2", "Great Plains" = "#009E73")
+# Provinces: Okabe-Ito colours drawn semi-transparent (region_alpha) so the sites stand out.
+# Sites: the complementary Okabe-Ito colour of their province (blue on orange, vermillion on
+# sky blue, reddish purple on green), each with a navy outline; checked for colourblind vision.
+region_fill  <- c("Basin and Range" = "#E69F00", "Coastal Plain" = "#56B4E9", "Great Plains" = "#009E73")
+region_alpha <- 0.35
+site_fill    <- c("Basin and Range" = "#0072B2", "Coastal Plain" = "#D55E00", "Great Plains" = "#CC79A7")
 ink         <- "#1F2A44"          # text, outlines and site borders (dark navy)
 ink_soft    <- "#3E4C6D"
 land_fill   <- "#F4EFE4"          # land outside the study provinces
@@ -215,7 +218,8 @@ bin_map <- function(b) {
   p <- ggplot() +
     geom_sf(data = countries_m, fill = land_fill, colour = NA) +
     geom_sf(data = prov_m, fill = NA, colour = border_col, linewidth = 0.2) +
-    geom_sf(data = study_m, aes(fill = Region), colour = ink_soft, linewidth = 0.35) +
+    geom_sf(data = study_m, fill = land_fill, colour = NA) +             # opaque base: hides inner boundaries
+    geom_sf(data = study_m, aes(fill = Region), colour = ink_soft, linewidth = 0.35, alpha = region_alpha) +
     geom_sf(data = countries_m, fill = NA, colour = ink_soft, linewidth = 0.35)
   if (!is.null(river_m)) p <- p + geom_sf(data = river_m, colour = river_col, linewidth = 0.6)
   p +
