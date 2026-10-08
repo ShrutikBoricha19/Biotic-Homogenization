@@ -17,8 +17,8 @@
 #   Fig. 2  Multisite Simpson dissimilarity beta_SIM of the three regions per
 #           time bin (Eq. 1).
 #   Fig. 3  beta_SIM additively partitioned into diet groups (a) and body size
-#           classes (b) (Eq. 4); the overall beta_SIM (blue points) with a LOESS
-#           curve (span = 0.75, wider when there are few bins) and 95% confidence band in every panel.
+#           classes (b) (Eq. 4); the overall beta_SIM per bin (yellow points joined
+#           by straight lines, no smoothing) in every panel.
 #   Fig. 4  Proportions of shared (Eq. 6, top rows) and endemic (Eq. 5, bottom
 #           rows) species within diet groups (a) and size classes (b).
 #
@@ -126,11 +126,9 @@ size_colours <- setNames(c("#FDE725", "#5EC962", "#21918C", "#3B528B", "#440154"
 ink          <- "#1F2A44"        # text, axes, lines and outlines (dark navy instead of grey/black)
 ink_soft     <- "#3E4C6D"        # secondary text
 point_fill   <- "#F0E442"        # overall beta_SIM points (Okabe-Ito yellow, navy outline)
-ribbon_fill  <- "#56B4E9"        # LOESS 95% band
 strip_fill   <- "#D6E6F5"        # panel titles
 band_fill    <- "#F6EBD0"        # shading of alternate time bins (pale sand)
 page_fill    <- "white"          # figure background (change here, e.g. "#F7FAFD", for a tinted page)
-loess_span   <- 0.75
 
 # Figure size (inches) and look.
 fig2_w <- 9;  fig2_h <- 5.2
@@ -662,19 +660,11 @@ fig3_panel <- function(type, groups, colours, tag) {
   ov <- tidyr::crossing(overall_pts, Group = factor(groups, levels = groups))
   bw <- time_bins %>% transmute(Mid, w = (Older - Younger) * 0.8)
   d <- d %>% left_join(bw, by = "Mid") %>% filter(beta_SIM_f > 0)   # no bar where the group adds nothing
-  # Each local fit must hold at least 4 time bins with weight > 0 (loess gives the
-  # farthest point in the window zero weight), so with few bins the span is widened.
-  span_use <- max(loess_span, 5 / nrow(overall_pts))
-  smooth_args <- list(method = "loess", span = span_use, formula = y ~ x, level = 0.95,
-                      method.args = list(degree = 1))   # degree 1: stable with few time bins
   ggplot() +
     band_layer +
-    do.call(geom_smooth, c(list(data = ov, mapping = aes(Mid, beta_SIM), se = TRUE, colour = NA,
-                                fill = ribbon_fill, alpha = 0.30), smooth_args)) +
     geom_rect(data = d, aes(xmin = Mid - w / 2, xmax = Mid + w / 2, ymin = 0, ymax = beta_SIM_f, fill = Group),
               colour = ink, linewidth = 0.25) +
-    do.call(geom_smooth, c(list(data = ov, mapping = aes(Mid, beta_SIM), se = FALSE, colour = ink,
-                                linewidth = 0.7), smooth_args)) +
+    geom_line(data = ov, aes(Mid, beta_SIM), colour = ink, linewidth = 0.7) +   # observed values, no smoothing
     geom_point(data = ov, aes(Mid, beta_SIM), shape = 21, fill = point_fill, colour = ink, size = 2.3, stroke = 0.6) +
     facet_wrap(~ Group, nrow = 1, drop = FALSE) +
     scale_fill_manual(values = colours, guide = "none", drop = FALSE) +
