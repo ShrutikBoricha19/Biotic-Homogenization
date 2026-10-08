@@ -20,7 +20,8 @@
 #           classes (b) (Eq. 4); the overall beta_SIM per bin (yellow points joined
 #           by straight lines, no smoothing) in every panel.
 #   Fig. 4  Proportions of shared (Eq. 6, top rows) and endemic (Eq. 5, bottom
-#           rows) species within diet groups (a) and size classes (b).
+#           rows) species within diet groups (a) and size classes (b); the overall
+#           beta_SIM per bin (yellow points, straight lines) in every panel.
 #
 # Species included (as Rowan et al.): large mammals - species of
 # 'large_mammal_orders' heavier than 'min_mass_kg' (1 kg). Species of these
@@ -689,8 +690,10 @@ fig4_panel <- function(type, groups, colours, tag) {
     pivot_longer(c(Shared, Endemic), names_to = "Component", values_to = "Proportion") %>%
     mutate(Group = factor(Group, levels = groups), Component = factor(Component, levels = c("Shared", "Endemic"))) %>%
     left_join(time_bins %>% transmute(Mid, w = (Older - Younger) * 0.8), by = "Mid")
-  y_top <- max(0.4, ceiling(max(d$Proportion, na.rm = TRUE) * 10) / 10)
+  y_top <- 1.2                                                       # room for beta_SIM (0-1) and the row labels
   d <- d %>% filter(Proportion > 0)                                  # no bar where the proportion is 0
+  ov <- tidyr::crossing(overall_pts, Group = factor(groups, levels = groups),
+                        Component = factor(c("Shared", "Endemic"), levels = c("Shared", "Endemic")))
   lab <- data.frame(Group = factor(groups[1], levels = groups),
                     Component = factor(c("Shared", "Endemic"), levels = c("Shared", "Endemic")),
                     label = c("Shared species", "Endemic species"))
@@ -698,14 +701,16 @@ fig4_panel <- function(type, groups, colours, tag) {
     band_layer +
     geom_rect(aes(xmin = Mid - w / 2, xmax = Mid + w / 2, ymin = 0, ymax = Proportion, fill = Group),
               colour = ink, linewidth = 0.25) +
-    geom_text(data = lab, aes(x = x_max - 0.1, y = y_top * 0.97, label = label), hjust = 0, vjust = 1,
+    geom_line(data = ov, aes(Mid, beta_SIM), colour = ink, linewidth = 0.7) +   # overall beta_SIM, as Fig. 3
+    geom_point(data = ov, aes(Mid, beta_SIM), shape = 21, fill = point_fill, colour = ink, size = 2.3, stroke = 0.6) +
+    geom_text(data = lab, aes(x = x_max - 0.1, y = y_top * 0.98, label = label), hjust = 0, vjust = 1,
               size = base_size / 3.3, colour = ink) +
     facet_grid(Component ~ Group, drop = FALSE) +
     scale_fill_manual(values = colours, guide = "none", drop = FALSE) +
     x_scale +
-    scale_y_continuous(breaks = seq(0, y_top, by = if (y_top <= 0.6) 0.2 else 0.25)) +
+    scale_y_continuous(breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v)) +
     coord_cartesian(xlim = c(x_max + 0.2, x_min - 0.2), ylim = c(0, y_top), expand = FALSE) +
-    labs(x = "Age (Ma)", y = "Proportion", tag = tag) +
+    labs(x = "Age (Ma)", y = expression("Proportion;" ~ beta[SIM] ~ "(points)"), tag = tag) +
     theme_rowan() +
     theme(strip.text.y = element_blank(), strip.background.y = element_blank(),
           panel.spacing.y = unit(0.6, "lines"))
