@@ -22,14 +22,15 @@
 #   great_plains_sites_per_bin.csv   Great Plains sites per time bin: original,
 #                                    added, total
 #   map_great_plains_expanded.png / .pdf   spatio-temporal map with the river
+#       (sites per time bin are in great_plains_sites_per_bin.csv)
 #
 # Inputs: Outputs/5_master_data/ (Step 5), Outputs/3d_resolved/time_bins.csv,
 #         Outputs/3_spatial/spatial_layers.rds (Step 3, for the map).
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 5.
-# Needs: dplyr, ggplot2, sf, maps, patchwork.
+# Needs: dplyr, ggplot2, sf, maps.
 # =============================================================================
 
-for (pkg in c("dplyr", "ggplot2", "sf", "maps", "patchwork")) {
+for (pkg in c("dplyr", "ggplot2", "sf", "maps")) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     stop("Package '", pkg, "' is not installed. Run: install.packages(\"", pkg, "\")")
   }
@@ -65,14 +66,23 @@ river_name   <- "Mississippi"
 map_crs <- "+proj=laea +lat_0=40 +lon_0=-97 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
 map_lon <- c(-115, -79)               # frame of the map (degrees)
 map_lat <- c(27, 51)
-map_width <- 16; map_height <- 9; map_dpi <- 300
-region_fills <- c("Great Plains" = "#CFE3C6",
-                  "Central Lowland west of the Mississippi (added)" = "#9FD08F",
-                  "Central Lowland east of the Mississippi (unchanged)" = "#E8E4D8")
-other_fill   <- "#F4F2EC"
-no_data_fill <- "grey88"
-sea_fill     <- "#EEF4F8"
+map_width <- 14; map_height <- 7.8; map_dpi <- 300
+# Colourblind-friendly: the provinces in greens (the added part darker than the Great
+# Plains), the sites in the complementary pink-purple, light (oldest bin) to dark
+# (youngest bin) - an ordered ramp, readable by lightness in every colour vision.
+region_fills <- c("Great Plains" = "#B6E0CB",
+                  "Central Lowland west of the Mississippi (added)" = "#5DBB93",
+                  "Central Lowland east of the Mississippi (unchanged)" = "#EFE4CC")
+site_ramp    <- c("#F4B3D9", "#5B0F57")   # site colours per time bin: light -> dark
+other_fill   <- "#F7F3EA"                 # other provinces
+no_data_fill <- "#E8E2D6"                 # outside the province layers (Mexico)
+sea_fill     <- "#E4EEF7"
 river_colour <- "#1F5FAD"
+ink          <- "#1F2A44"                 # text, outlines (dark navy)
+ink_soft     <- "#3E4C6D"
+line_soft    <- "#B9AE97"                 # boundaries of the other provinces
+other_sites  <- "#7C879C"                 # sites in other provinces (muted slate)
+legend_fill  <- "#FBF8F1"
 
 # =============================================================================
 # HELPERS
@@ -276,7 +286,7 @@ lims <- st_bbox(st_transform(st_segmentize(st_transform(frame_ll, aea), 20000), 
 
 # Sites: one point per site and bin; Great Plains sites coloured by bin.
 bin_text <- sprintf("Bin %d  (%s - %s Ma)", bins$Time_Bin, fmt_age(bins$Older), fmt_age(bins$Younger))
-bin_colours <- setNames(hcl.colors(nrow(bins) + 1, "Plasma")[seq_len(nrow(bins))], bin_text)
+bin_colours <- setNames(colorRampPalette(site_ramp)(nrow(bins)), bin_text)
 pts <- master_out %>%
   mutate(Latitude = as.numeric(Latitude), Longitude = as.numeric(Longitude), Time_Bin = as.integer(Time_Bin)) %>%
   filter(!is.na(Latitude), !is.na(Longitude)) %>%
@@ -301,75 +311,48 @@ river_lab <- st_coordinates(st_transform(st_sfc(st_point(c(river_lon_at(36.5) + 
 
 p_map <- ggplot() +
   geom_sf(data = countries, fill = no_data_fill, colour = NA) +
-  geom_sf(data = prov_m, fill = other_fill, colour = "grey60", linewidth = 0.2) +
-  geom_sf(data = regions_m, aes(fill = Region), colour = "grey35", linewidth = 0.35) +
-  geom_sf(data = countries, fill = NA, colour = "grey20", linewidth = 0.4) +
+  geom_sf(data = prov_m, fill = other_fill, colour = line_soft, linewidth = 0.2) +
+  geom_sf(data = regions_m, aes(fill = Region), colour = ink_soft, linewidth = 0.35) +
+  geom_sf(data = countries, fill = NA, colour = ink_soft, linewidth = 0.4) +
   geom_sf(data = river_m, aes(linetype = "Mississippi River"), colour = river_colour, linewidth = 1.1) +
-  geom_sf(data = pts[!pts$In_GP, ], colour = "grey55", size = 0.9, alpha = 0.6) +
-  geom_sf(data = gp_pts, colour = "white", size = 2.8) +                       # white halo
-  geom_sf(data = gp_pts, aes(colour = Bin_Text), size = 2.1) +
-  geom_label(data = labs_df, aes(X, Y, label = lab), fontface = "bold", size = 4, colour = "grey20",
-             lineheight = 0.9, fill = alpha("white", 0.75), label.size = 0, label.padding = unit(0.15, "lines")) +
+  geom_sf(data = pts[!pts$In_GP, ], colour = other_sites, size = 0.9, alpha = 0.6) +
+  geom_sf(data = gp_pts, aes(colour = Bin_Text), size = 2.4) +
+  geom_sf(data = gp_pts, colour = ink, size = 2.4, shape = 1, stroke = 0.35) +   # navy outline
+  geom_label(data = labs_df, aes(X, Y, label = lab), fontface = "bold", size = 4.2, colour = ink,
+             lineheight = 0.9, fill = alpha(legend_fill, 0.85), label.size = 0, label.padding = unit(0.2, "lines")) +
   annotate("text", x = river_lab[1], y = river_lab[2], label = "Mississippi R.", colour = river_colour,
            fontface = "bold.italic", size = 4, hjust = 0, angle = 0) +
-  scale_fill_manual(values = region_fills, name = NULL, drop = FALSE) +
+  scale_fill_manual(values = region_fills, name = "Province", drop = FALSE,
+                    labels = function(x) sub(" of the Mississippi", "\nof the Mississippi", x)) +
   scale_colour_manual(values = bin_colours, labels = bin_labels, name = "Great Plains sites per time bin",
                       drop = FALSE) +
   scale_linetype_manual(values = c("Mississippi River" = "solid"), name = NULL) +
-  guides(fill = guide_legend(order = 1, ncol = 1),
-         linetype = guide_legend(order = 2, override.aes = list(colour = river_colour, linewidth = 1.1)),
+  guides(fill = guide_legend(order = 1, ncol = 1, override.aes = list(colour = ink_soft)),
+         linetype = guide_legend(order = 2, override.aes = list(colour = river_colour, linewidth = 1.3)),
          colour = guide_legend(order = 3, ncol = 1, title.position = "top",
-                               override.aes = list(size = 4))) +
+                               override.aes = list(size = 5.5))) +
   coord_sf(crs = map_crs, xlim = lims[c("xmin", "xmax")], ylim = lims[c("ymin", "ymax")], expand = FALSE) +
   labs(title = "Great Plains + Central Lowland west of the Mississippi",
        subtitle = sprintf("%d Great Plains sites in all time bins, %d of them from the western Central Lowland",
                           n_distinct(gp_pts$Site_Key), n_distinct(gp_pts$Site_Key[gp_pts$Moved_To_Great_Plains])),
-       caption = "Grey points: sites in other provinces. Province boundaries: Fenneman & Johnson (1946); river: Natural Earth.") +
+       caption = paste0("Small slate points: sites in other provinces. Site colours run from light (oldest bin) to dark (youngest).\n",
+                        "Province boundaries: Fenneman & Johnson (1946); river: Natural Earth.")) +
   theme_void(base_size = 13) +
-  theme(panel.background = element_rect(fill = sea_fill, colour = "grey30", linewidth = 0.4),
-        plot.title = element_text(face = "bold", size = 17),
-        plot.subtitle = element_text(colour = "grey30", size = 12, margin = margin(b = 6)),
-        plot.caption = element_text(colour = "grey35", size = 9.5, hjust = 0),
-        legend.position = "right", legend.box = "vertical", legend.text = element_text(size = 10.5),
-        legend.box.just = "left", legend.spacing.y = unit(0.4, "lines"),
-        legend.title = element_text(size = 11, face = "bold"))
-
-# Side panel: Great Plains sites per bin, before and after.
-tab <- gp_per_bin %>% mutate(Bin = bin_text[match(Time_Bin, bins$Time_Bin)])
-n_r <- nrow(tab)
-tab_long <- rbind(
-  data.frame(row = 0, col = 1:4, txt = c("Time bin", "Great\nPlains", "Added", "Total"), bold = TRUE),
-  do.call(rbind, lapply(seq_len(n_r), function(i) data.frame(
-    row = i, col = 1:4, bold = c(FALSE, FALSE, FALSE, TRUE),
-    txt = c(tab$Bin[i], tab$sites_original[i], paste0("+", tab$sites_added[i]), tab$sites_total[i])))),
-  data.frame(row = n_r + 1, col = 1:4, bold = TRUE,
-             txt = c("All bins", n_distinct(gp_pts$Site_Key[!gp_pts$Moved_To_Great_Plains]),
-                     paste0("+", n_distinct(gp_pts$Site_Key[gp_pts$Moved_To_Great_Plains])),
-                     n_distinct(gp_pts$Site_Key))))
-x_pos <- c(0, 2.9, 3.75, 4.5)
-p_tab <- ggplot(tab_long) +
-  annotate("rect", xmin = -0.1, xmax = 4.9, ymin = -(seq_len(n_r)) - 0.5, ymax = -(seq_len(n_r)) + 0.5,
-           fill = rep(c("#F6F6F4", "white"), length.out = n_r)) +
-  annotate("segment", x = -0.1, xend = 4.9, y = -0.5, yend = -0.5, colour = "grey40") +
-  annotate("segment", x = -0.1, xend = 4.9, y = -(n_r + 0.5), yend = -(n_r + 0.5), colour = "grey40") +
-  geom_text(aes(x = x_pos[col], y = -row, label = txt, fontface = ifelse(bold, "bold", "plain"),
-                hjust = ifelse(col == 1, 0, 0.5),
-                colour = ifelse(col == 3 & row > 0, "#2E7D32", "grey10")),
-            size = 3.6, lineheight = 0.9) +
-  scale_colour_identity() +
-  scale_x_continuous(limits = c(-0.15, 4.95), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(-(n_r + 1.7), 0.9), expand = c(0, 0)) +
-  labs(title = "Great Plains sites per time bin",
-       subtitle = "Added = Central Lowland sites west of the Mississippi") +
-  theme_void(base_size = 12) +
-  theme(plot.title = element_text(face = "bold", size = 13),
-        plot.subtitle = element_text(colour = "grey35", size = 10, margin = margin(b = 8)))
-
-# Legends go under the table in the side panel.
-p <- patchwork::wrap_plots(A = p_map, B = p_tab, C = patchwork::guide_area(),
-                           design = "AB\nAC", widths = c(1.9, 1), heights = c(1, 1.25)) +
-  patchwork::plot_layout(guides = "collect") &
-  theme(plot.background = element_rect(fill = "white", colour = NA), plot.margin = margin(10, 12, 8, 12))
+  theme(panel.background = element_rect(fill = sea_fill, colour = ink_soft, linewidth = 0.4),
+        plot.background = element_rect(fill = "white", colour = NA),
+        plot.title = element_text(face = "bold", colour = ink, size = 19),
+        plot.subtitle = element_text(colour = ink_soft, size = 13, margin = margin(b = 8)),
+        plot.caption = element_text(colour = ink_soft, size = 10.5, hjust = 0),
+        legend.position = "right", legend.box = "vertical", legend.box.just = "left",
+        # legend in its own framed panel, with large keys and text
+        legend.box.background = element_rect(fill = legend_fill, colour = ink_soft, linewidth = 0.6),
+        legend.box.margin = margin(14, 16, 14, 16), legend.margin = margin(4, 4, 4, 4),
+        legend.spacing.y = unit(0.7, "lines"),
+        legend.title = element_text(size = 14, face = "bold", colour = ink),
+        legend.text = element_text(size = 12.5, colour = ink),
+        legend.key.size = unit(0.95, "cm"),
+        plot.margin = margin(12, 14, 10, 14))
+p <- p_map
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 png_file <- file.path(output_dir, "map_great_plains_expanded.png")
