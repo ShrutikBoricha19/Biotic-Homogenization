@@ -8,7 +8,7 @@
 # The three regions here play the role of Rowan's three EARS subregions:
 #   Basin and Range, Coastal Plain, Great Plains (with the Central Lowland
 #   west of the Mississippi, Step 5b)
-# and the time bins are ours (Step 3c; 0.75 Myr from 4.00 Ma, the last bin
+# and the time bins are ours (Step 3c; 0.75 Myr from 3.25 Ma, the last bin
 # shorter). For every time bin the sites of each region are pooled into one
 # regional species list (a region x species presence-absence matrix), exactly
 # as in Rowan et al.'s code (Rowan_et_al_SI_Code_14MAY.R).
@@ -625,17 +625,18 @@ p2 <- ggplot(beta_by_bin, aes(Mid, beta_SIM)) +
   band_layer +
   geom_line(colour = "grey15", linewidth = 0.6) +
   geom_point(shape = 21, fill = "white", colour = "grey10", size = 3.6, stroke = 0.8) +
-  x_scale +
+  scale_x_reverse(breaks = unique(c(x_max, x_breaks)),                # older limit of Bin 1 (3.25) marked too
+                  labels = function(v) sub("\\.?0+$", "", sprintf("%.2f", v))) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v),
                      expand = expansion(mult = c(0.02, 0.04))) +
   # right-hand guide, as in the paper: up = provincialism, down = homogenization
-  annotate("segment", x = -0.28, xend = -0.28, y = 0.53, yend = 0.98, colour = "grey15", linewidth = 0.5,
+  annotate("segment", x = -0.07 * x_max, xend = -0.07 * x_max, y = 0.53, yend = 0.98, colour = "grey15", linewidth = 0.5,
            arrow = arrow(length = unit(0.1, "in"), type = "open")) +
-  annotate("segment", x = -0.28, xend = -0.28, y = 0.47, yend = 0.02, colour = "grey15", linewidth = 0.5,
+  annotate("segment", x = -0.07 * x_max, xend = -0.07 * x_max, y = 0.47, yend = 0.02, colour = "grey15", linewidth = 0.5,
            arrow = arrow(length = unit(0.1, "in"), type = "open")) +
-  annotate("text", x = -0.40, y = 0.755, label = "Higher \u03b2 (provincialism)", angle = 90,
+  annotate("text", x = -0.10 * x_max, y = 0.755, label = "Higher \u03b2 (provincialism)", angle = 90,
            size = base_size / 4.1, colour = "grey15") +
-  annotate("text", x = -0.40, y = 0.245, label = "Lower \u03b2 (homogenization)", angle = 90,
+  annotate("text", x = -0.10 * x_max, y = 0.245, label = "Lower \u03b2 (homogenization)", angle = 90,
            size = base_size / 4.1, colour = "grey15") +
   coord_cartesian(xlim = c(x_max, x_min), clip = "off", expand = TRUE) +
   labs(x = "Age (Ma)", y = beta_lab) +
@@ -650,7 +651,10 @@ fig3_panel <- function(type, groups, colours, tag) {
   ov <- tidyr::crossing(overall_pts, Group = factor(groups, levels = groups))
   bw <- time_bins %>% transmute(Mid, w = (Older - Younger) * 0.8)
   d <- d %>% left_join(bw, by = "Mid") %>% filter(beta_SIM_f > 0)   # no bar where the group adds nothing
-  smooth_args <- list(method = "loess", span = loess_span, formula = y ~ x, level = 0.95,
+  # Each local fit must hold at least 4 time bins with weight > 0 (loess gives the
+  # farthest point in the window zero weight), so with few bins the span is widened.
+  span_use <- max(loess_span, 5 / nrow(overall_pts))
+  smooth_args <- list(method = "loess", span = span_use, formula = y ~ x, level = 0.95,
                       method.args = list(degree = 1))   # degree 1: stable with few time bins
   ggplot() +
     band_layer +

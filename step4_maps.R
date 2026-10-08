@@ -159,7 +159,7 @@ geom_retry <- function(f, x) {
   })
 }
 
-fmt_age <- function(x) ifelse(x < 0.1, sprintf("%.4f", x), sprintf("%.2f", x))   # 4.00, 0.0117
+fmt_age <- function(x) ifelse(x < 0.1, sprintf("%.4f", x), sprintf("%.2f", x))   # 3.25, 0.0117
 
 save_map <- function(p, dir, name, width = map_width, height = map_height) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
@@ -466,6 +466,8 @@ for (lv in c("political", "division", "province")) {
 # =============================================================================
 
 cat("\n=== 4. TEMPORAL MAPS ===\n")
+# remove per-bin maps of an earlier run (e.g. a bin that no longer exists)
+unlink(list.files(file.path(output_dir, "2_temporal"), "^map_bin[0-9]+\\.(png|pdf)$", full.names = TRUE))
 for (b in seq_len(n_bins)) {
   pts <- filter(sites_sf, Stage_Number == time_bins$Bin_Number[b])
   p <- make_map(preps[[temporal_level]], pts, site_points(pts),

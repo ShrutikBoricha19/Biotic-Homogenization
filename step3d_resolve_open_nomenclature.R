@@ -5,8 +5,8 @@
 # ("cf. Lepus californicus", "cf. Titanotylopus sp.") are given a species
 # name using the species of the same genus found in the NEXT time bin:
 #
-#   - Bin 1 records are resolved with Bin 2, Bin 2 with Bin 3, ... Bin 5 with
-#     Bin 6. A bin is never resolved with an older bin (Bin 2 never uses Bin 1).
+#   - Bin 1 records are resolved with Bin 2, Bin 2 with Bin 3, ... Bin 4 with
+#     Bin 5. A bin is never resolved with an older bin (Bin 2 never uses Bin 1).
 #   - Only firmly identified species (no "sp.", no "cf.") of the next bin are
 #     used as candidates; names given by this script are not used again.
 #   - One candidate species in the genus -> that name.

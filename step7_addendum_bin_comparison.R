@@ -28,8 +28,7 @@
 # all bins (the smallest of those values), so that every bin is compared at
 # the same number of species.
 #
-# Bins as in the equal-species figure: Step 3c Bin 1 is left out and the rest
-# are renumbered (Step 3c Bin 2 = Bin 1).
+# Time bins are those of Step 3c (Bin 1 = 3.25-2.50 Ma).
 #
 # Outputs (Outputs/7_rowan_figures/bin_comparison/):
 #   bin_bootstrap_summary.csv       per bin: n, bootstrap mean, SD, 95% CI
@@ -66,7 +65,6 @@ bins_file   <- file.path("Outputs", "3d_resolved", "time_bins.csv")
 output_dir  <- file.path(work_dir, "Outputs", "7_rowan_figures", "bin_comparison")
 
 regions     <- c("Basin and Range", "Coastal Plain", "Great Plains")
-drop_bins   <- 1          # Step 3c bin(s) left out (as in the equal-species figure)
 n_boot      <- 9999       # bootstrap iterations per bin (smallest possible p = 2/(n_boot+1))
 common_n    <- FALSE      # TRUE = the same species count in every bin
 alpha       <- 0.05
@@ -121,8 +119,8 @@ cat(sprintf("  %d large-mammal species (Step 7)\n", length(large)))
 
 time_bins <- read_csv_utf8(bins_file) %>%
   transmute(Time_Bin = as.integer(Bin_Number), Older = as.numeric(Older_Ma), Younger = as.numeric(Younger_Ma)) %>%
-  filter(!Time_Bin %in% drop_bins) %>% arrange(desc(Older)) %>%
-  mutate(Display_Bin = row_number(), Mid = (Older + Younger) / 2)
+  arrange(desc(Older)) %>%
+  mutate(Display_Bin = Time_Bin, Mid = (Older + Younger) / 2)
 
 occ <- md %>%
   mutate(Time_Bin = as.integer(Time_Bin)) %>%
@@ -306,7 +304,7 @@ save_fig(p2, "Fig_bin_comparison_matrix", w = 8.5, h = 6.2)
 # 5. TABLES
 # =============================================================================
 
-write.csv(summ %>% transmute(Bin = Display_Bin, Step3c_Bin = Time_Bin, Older_Ma = Older, Younger_Ma = Younger,
+write.csv(summ %>% transmute(Bin = Display_Bin, Older_Ma = Older, Younger_Ma = Younger,
                              n_provinces, sites_per_province, species_per_province, n_species_used = n_target,
                              beta_SIM_mean = round(beta_SIM_mean, 4), beta_SIM_sd = round(beta_SIM_sd, 4),
                              lower95 = round(lower95, 4), upper95 = round(upper95, 4)),

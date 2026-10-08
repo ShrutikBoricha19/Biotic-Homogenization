@@ -18,7 +18,7 @@
 #   Spatial_Bin      physiographic province (USA) / subregion (Canada)
 #   Physio_Division  physiographic division (USA) / region (Canada)
 #   State_Province, Country
-#   Time_Bin         time bin number;  Time_Bin_Label  e.g. "Bin 1 (4-3.25 Ma)"
+#   Time_Bin         time bin number;  Time_Bin_Label  e.g. "Bin 1 (3.25-2.5 Ma)"
 #   Original_Name    name before Step 3d (differs only for resolved sp./cf.)
 #   Name_Status      "as identified" or "resolved from next bin (...)"
 #   Source           FAUNMAP or PBDB (for tracing a record back only)

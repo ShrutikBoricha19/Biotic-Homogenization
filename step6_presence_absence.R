@@ -164,6 +164,9 @@ cat(sprintf("  %d species x site x bin records in the three provinces\n", nrow(m
 # =============================================================================
 
 cat("\n=== 2. PRESENCE-ABSENCE MATRICES ===\n")
+# remove per-bin files of an earlier run (e.g. a bin that no longer exists)
+unlink(c(list.files(matrix_dir, "^bin[0-9]+\\.csv$", recursive = TRUE, full.names = TRUE),
+         list.files(file.path(accum_dir, "pools"), "_bin[0-9]+\\.png$", full.names = TRUE)))
 matrices <- list()
 matrix_summary <- list()
 for (p in provinces) {

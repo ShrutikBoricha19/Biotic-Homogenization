@@ -13,9 +13,8 @@
 #   Points      mean beta_SIM of the random draws
 #   Error bars  95% range of the draws (2.5th-97.5th percentiles)
 #
-# Display: the first time bin of Step 3c (4.00-3.25 Ma; large mammals in one
-# province only) is left out and the remaining bins are renumbered 1, 2, ...
-# (Step 3c Bin 2 = Bin 1 here); the age axis starts at 3.25 Ma.
+# Time bins are those of Step 3c (Bin 1 = 3.25-2.50 Ma); the age axis starts
+# at the older limit of Bin 1.
 #
 # Outputs (Outputs/7_rowan_figures/):
 #   Fig2_equal_species.png/.pdf       beta_SIM per bin with error bars
@@ -47,7 +46,6 @@ bins_file  <- file.path("Outputs", "3d_resolved", "time_bins.csv")
 output_dir <- file.path(work_dir, "Outputs", "7_rowan_figures")
 
 regions      <- c("Basin and Range", "Coastal Plain", "Great Plains")
-drop_bins    <- 1          # Step 3c bin(s) left out of this figure
 n_resamples  <- 999
 random_seed  <- 2024
 
@@ -81,10 +79,9 @@ if (!file.exists(pa_path)) stop("File not found:\n  ", pa_path, "\nRun Step 7 fi
 pa_list <- readRDS(pa_path)
 time_bins <- read.csv(file.path(work_dir, bins_file), stringsAsFactors = FALSE) %>%
   transmute(Time_Bin = as.integer(Bin_Number), Older = as.numeric(Older_Ma), Younger = as.numeric(Younger_Ma)) %>%
-  filter(!Time_Bin %in% drop_bins) %>% arrange(desc(Older)) %>%
-  mutate(Display_Bin = row_number(), Mid = (Older + Younger) / 2)
-cat(sprintf("  %d time bins (Step 3c bin %s left out; the rest renumbered from 1)\n",
-            nrow(time_bins), paste(drop_bins, collapse = ", ")))
+  arrange(desc(Older)) %>%
+  mutate(Display_Bin = Time_Bin, Mid = (Older + Younger) / 2)
+cat(sprintf("  %d time bins\n", nrow(time_bins)))
 
 # =============================================================================
 # 2. EQUAL-SPECIES RESAMPLING
@@ -108,7 +105,7 @@ for (k in seq_len(nrow(time_bins))) {
     beta_sim(m)
   })
   res[[length(res) + 1]] <- data.frame(
-    Display_Bin = time_bins$Display_Bin[k], Step3c_Bin = b,
+    Display_Bin = time_bins$Display_Bin[k],
     Older = time_bins$Older[k], Younger = time_bins$Younger[k], Mid = time_bins$Mid[k],
     n_provinces = nrow(x), provinces = paste(rownames(x), collapse = "; "),
     species_per_province = paste(lengths(sp_lists), collapse = "/"),

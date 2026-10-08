@@ -2,12 +2,15 @@
 # STEP 3c: ASSIGN FAUNMAP AND PBDB RECORDS TO TIME BINS
 #
 # Each record is placed in ONE numbered time bin using the MIDPOINT of its
-# age range. Bins are 'bin_width' (0.75 Myr) long, from 'bin_start' (4.00 Ma)
+# age range. Bins are 'bin_width' (0.75 Myr) long, from 'bin_start' (3.25 Ma)
 # to 'bin_end' (0.0117 Ma = end of the Late Pleistocene, 11,700 years ago):
-#   Bin 1  4.00 - 3.25 Ma      Bin 4  1.75 - 1.00 Ma
-#   Bin 2  3.25 - 2.50 Ma      Bin 5  1.00 - 0.25 Ma
-#   Bin 3  2.50 - 1.75 Ma      Bin 6  0.25 - 0.0117 Ma (shorter: 0.24 Myr)
-# A boundary age belongs to the younger bin (e.g. 3.25 Ma = Bin 2); both
+#   Bin 1  3.25 - 2.50 Ma      Bin 4  1.00 - 0.25 Ma
+#   Bin 2  2.50 - 1.75 Ma      Bin 5  0.25 - 0.0117 Ma (shorter: 0.24 Myr)
+#   Bin 3  1.75 - 1.00 Ma
+# The former first bin (4.00 - 3.25 Ma) was dropped because it has too few
+# sites; records with a midpoint older than 3.25 Ma fall outside the study
+# interval and are left out (they are listed in the excluded-records report).
+# A boundary age belongs to the younger bin (e.g. 2.50 Ma = Bin 2); both
 # outer limits are included. The last bin is shorter than the others because
 # the interval ends at 0.0117 Ma; set 'merge_short_last_bin' to TRUE to join
 # it to the bin before it. The bins are saved to time_bins.csv, which every
@@ -58,7 +61,7 @@ save_excel <- TRUE    # also save .xlsx copies (skipped if writexl is not instal
 
 # Time bins.
 bin_width <- 0.75     # Myr
-bin_start <- 4.00     # Ma, older limit of Bin 1 (steps: 4.00, 3.25, 2.50 ...)
+bin_start <- 3.25     # Ma, older limit of Bin 1 (steps: 3.25, 2.50, 1.75 ...)
 bin_end   <- 0.0117   # Ma, end of the Late Pleistocene (11,700 years ago)
 merge_short_last_bin <- FALSE   # TRUE: a last bin shorter than half the width joins the bin before it
 

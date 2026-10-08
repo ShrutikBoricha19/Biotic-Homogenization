@@ -3,23 +3,23 @@
 #
 # For three physiographic provinces (Basin and Range, Coastal Plain, Great
 # Plains; assigned to every site in Step 3), this script keeps the MIDPOINT
-# age of every site (from Step 3c) and tests ways of cutting 4.00-0.0117 Ma
+# age of every site (from Step 3c) and tests ways of cutting 3.25-0.0117 Ma
 # into time bins:
 #
 #   - 0.75-Myr bins (current)   the Step 3c bins, read from time_bins.csv
-#   - Geological stages         Zanclean (from 4 Ma), Piacenzian, Gelasian,
+#   - Geological stages         Piacenzian (from 3.25 Ma), Gelasian,
 #                               Calabrian, Chibanian, Late Pleistocene
 #   - Merged stages             every way of joining neighbouring stages
-#                               (e.g. Zanc+Piac / Gela+Cala / Chib+Late)
+#                               (e.g. Piac+Gela / Cala / Chib+Late)
 #   - Epochs                    Pliocene / Early / Middle / Late Pleistocene
-#   - Magnetic chrons           Gilbert / Gauss / Matuyama / Brunhes
+#   - Magnetic chrons           Gauss / Matuyama / Brunhes
 #   - NALMA                     Blancan / Irvingtonian / Rancholabrean
 #                               (boundaries 1.35 and 0.21 Ma, as in Step 1)
 #   - Equal width               standard intervals of 250, 400, 500, 600, 750 and
 #                               800 kyr and 1, 1.25 and 1.5 Myr, either aligned to
-#                               round ages (e.g. 4.0, 3.5, 3.0 ... Ma, as the
+#                               round ages (e.g. 3.0, 2.5, 2.0 ... Ma, as the
 #                               500-kyr bins of Rowan et al. 2024) or counted
-#                               from 4 Ma
+#                               from 3.25 Ma
 #   - Equal count               boundaries at quantiles of the site midpoints,
 #                               so every bin holds about the same number of sites
 #   - Optimized                 boundaries chosen to make the SMALLEST
@@ -88,14 +88,14 @@ province_colours <- c("Basin and Range" = "#eb6834", "Coastal Plain" = "#4a3aa7"
 
 only_sites_with_species <- FALSE  # TRUE: count only sites that have species in Step 6 (as Step 7)
 
-age_old   <- 4.000                # study interval (Ma), as the Step 3c bins
+age_old   <- 3.25                 # study interval (Ma), as the Step 3c bins (the 4.00-3.25 Ma bin was dropped)
 age_young <- 0.0117
-stage_bounds <- c(4.000, 3.600, 2.580, 1.800, 0.7741, 0.129, 0.0117)
-stage_names  <- c("Zanclean", "Piacenzian", "Gelasian", "Calabrian", "Chibanian", "Late Pleistocene")
+stage_bounds <- c(3.25, 2.580, 1.800, 0.7741, 0.129, 0.0117)   # Piacenzian cut at the study start (3.25 Ma)
+stage_names  <- c("Piacenzian", "Gelasian", "Calabrian", "Chibanian", "Late Pleistocene")
 
 equal_widths   <- c(0.25, 0.4, 0.5, 0.6, 0.75, 0.8, 1.0, 1.25, 1.5)   # Myr (0.5 = 500 kyr)
 width_anchors  <- c("round", "start")   # "round": boundaries at round ages (0.5, 1.0, 1.5 ... Ma,
-                                        #   as in Rowan et al. 2024); "start": counted from 4 Ma
+                                        #   as in Rowan et al. 2024); "start": counted from age_old
 recommend_standard_only <- FALSE        # TRUE: recommend only standard intervals (current bins, stages, merged
                                         #   stages, epochs, chrons, NALMA, equal-width bins)
 bin_numbers    <- 3:6                # bins tried for equal-count and optimized schemes
@@ -253,8 +253,8 @@ add_scheme(current_name, current_bounds, "Current bins")
 add_scheme("Geological stages", stage_bounds, "Stages")
 add_scheme("Epochs: Pliocene / Early / Middle / Late Pleistocene",
            c(age_old, 2.58, 0.7741, 0.129, age_young), "Epochs")
-add_scheme("Magnetic chrons: Gilbert / Gauss / Matuyama / Brunhes",
-           c(age_old, 3.596, 2.581, 0.773, age_young), "Magnetic chrons")
+add_scheme("Magnetic chrons: Gauss / Matuyama / Brunhes",
+           c(age_old, 2.581, 0.773, age_young), "Magnetic chrons")
 add_scheme("NALMA (Blancan / Irvingtonian / Rancholabrean)", c(age_old, 1.35, 0.21, age_young), "NALMA")
 
 # Every way of merging neighbouring stages (keeps the stage names meaningful).
@@ -427,7 +427,7 @@ p_hist <- ggplot(distinct(sites, Province, Site, Midpoint_Ma), aes(Midpoint_Ma, 
             vjust = 1.4, size = base_size / 4.6, colour = ink_soft) +
   facet_wrap(~ Province, ncol = 1, scales = "free_y") +
   scale_fill_manual(values = province_colours) +
-  scale_x_reverse(breaks = 4:0, expand = c(0.01, 0)) +
+  scale_x_reverse(breaks = c(age_old, 3:0), labels = function(v) format(v, drop0trailing = TRUE), expand = c(0.01, 0)) +
   coord_cartesian(xlim = c(age_old, age_young)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.3)), breaks = scales::pretty_breaks(3)) +
   labs(title = "Where do the site ages fall?",
@@ -441,7 +441,7 @@ save_fig(p_hist, "midpoint_distribution", height = slide_h * 1.2)
 first_of <- function(fam) summary_tab$Scheme[summary_tab$Family == fam & summary_tab$Eligible][1]
 show <- unique(c(current_name,
                  "Geological stages",
-                 "Magnetic chrons: Gilbert / Gauss / Matuyama / Brunhes",
+                 "Magnetic chrons: Gauss / Matuyama / Brunhes",
                  first_of("Merged stages"),
                  if ("500 kyr bins (round ages)" %in% names(schemes)) "500 kyr bins (round ages)",
                  first_of("Equal width"),
@@ -467,7 +467,7 @@ p_cmp <- ggplot(cmp) +
   facet_grid(Scheme ~ Province, switch = "y") +
   scale_fill_gradientn(colours = c("#f4f4f2", "#cde2fb", "#6da7ec", "#256abf", "#0d366b"),
                        limits = c(0, NA), name = "Sites") +
-  scale_x_reverse(limits = c(age_old, age_young), breaks = c(4, 3, 2, 1), expand = c(0, 0)) +
+  scale_x_reverse(limits = c(age_old, age_young), breaks = c(3, 2, 1), expand = c(0, 0)) +
   scale_y_continuous(breaks = NULL, expand = c(0, 0)) +
   labs(title = "How evenly do different time bins spread the sites?",
        subtitle = "Sites per province and bin for each binning scheme (same midpoint ages throughout)",
