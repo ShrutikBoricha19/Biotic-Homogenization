@@ -243,7 +243,8 @@ succ <- tests %>% filter(Successive) %>%
   arrange(Bin_A) %>%
   mutate(y = ifelse(row_number() %% 2 == 1, 1.06, 1.15),       # alternate heights so brackets do not join
          xa = xa - 0.03 * sign(xa - xb), xb = xb + 0.03 * sign(xa - xb),
-         lab = ifelse(Significant, stars(p_holm), "n.s."))
+         p_txt = ifelse(p_holm < 0.001, "p < 0.001", sprintf("p = %.3f", p_holm)),
+         lab = ifelse(Significant, paste(p_txt, stars(p_holm)), p_txt))
 
 p1 <- ggplot(summ, aes(Mid, beta_SIM_mean)) +
   geom_rect(data = bands, aes(xmin = Younger, xmax = Older, ymin = -Inf, ymax = Inf),
@@ -258,7 +259,7 @@ p1 <- ggplot(summ, aes(Mid, beta_SIM_mean)) +
   geom_segment(data = succ, aes(x = xb, xend = xb, y = y, yend = y - 0.02), inherit.aes = FALSE,
                colour = ink, linewidth = 0.45) +
   geom_text(data = succ, aes((xa + xb) / 2, y + 0.035, label = lab), inherit.aes = FALSE,
-            size = base_size / 3.9, colour = ink, fontface = ifelse(succ$Significant, "bold", "plain")) +
+            size = base_size / 4.4, colour = ink, fontface = ifelse(succ$Significant, "bold", "plain")) +
   geom_text(data = bin_labels, aes(Mid, 0.02, label = lab), vjust = 0, inherit.aes = FALSE,
             size = base_size / 4.3, colour = ink_soft, lineheight = 0.9) +
   scale_x_reverse(breaks = c(x_max, seq(floor(x_max), 0, by = -1)),
@@ -268,8 +269,8 @@ p1 <- ggplot(summ, aes(Mid, beta_SIM_mean)) +
   labs(x = "Age (Ma)", y = expression(beta[SIM]),
        caption = paste0(sprintf("Points = mean of %d bootstrap iterations (sites resampled, then each province cut to %s); ",
                                 n_boot, if (common_n) sprintf("n = %d species", n_common) else "the poorest province's n species"),
-                        "\nerror bars = 95% CI. Brackets: successive bins; * p < 0.05, ** p < 0.01, *** p < 0.001 ",
-                        "(Holm-corrected over all pairs);\nn.s. = not significant.")) +
+                        "\nerror bars = 95% CI. Brackets: p for the difference between successive bins (Holm-corrected over all pairs);",
+                        "\nbold with * p < 0.05, ** p < 0.01, *** p < 0.001 = significant. All pairs: Fig_bin_comparison_matrix.")) +
   theme_classic(base_size = base_size) +
   theme(axis.line = element_line(colour = ink, linewidth = 0.4),
         axis.ticks = element_line(colour = ink, linewidth = 0.4),
