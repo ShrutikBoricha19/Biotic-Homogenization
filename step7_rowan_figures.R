@@ -71,7 +71,9 @@
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 5b.
 # Needs: dplyr, tidyr, ggplot2, readxl, patchwork (grid/gtable come with ggplot2);
 #        writexl for the Excel workbook.
-# Silhouettes: diet icons as in Step 8; size icons from game-icons.net (CC BY 3.0).
+# Silhouettes: from PhyloPic via the rphylopic package (silhouette_source = "phylopic",
+#   credits written to phylopic_credits.csv), else the built-in diet icons (as in Step 8)
+#   and size icons from game-icons.net (CC BY 3.0).
 # =============================================================================
 
 for (pkg in c("dplyr", "tidyr", "ggplot2", "readxl", "patchwork", "gtable")) {
@@ -136,6 +138,17 @@ band_fill    <- "#F6EBD0"        # shading of alternate time bins (pale sand)
 equal_draws  <- 999            # Figs. 3-4 curve: random draws per bin, as step7_addendum_equal_species.R
 equal_seed   <- 2024           #   (same seed and method, so the values match the addendum exactly)
 page_fill    <- "white"          # figure background (change here, e.g. "#F7FAFD", for a tinted page)
+panel_letters <- FALSE           # TRUE = "a"/"b" tags on Figs. 3 and 4
+
+# Silhouettes on Figs. 3-4: "phylopic" downloads them from PhyloPic (phylopic.org) with the
+# rphylopic package (install.packages("rphylopic"); needs internet); "builtin" uses the
+# embedded silhouettes below. Any taxon PhyloPic cannot supply falls back to the built-in one.
+silhouette_source <- "phylopic"
+phylopic_diet <- c("Carnivore" = "Smilodon fatalis", "Omnivore" = "Ursus americanus",
+                   "Browser" = "Odocoileus virginianus", "Mixed feeder" = "Camelops hesternus",
+                   "Grazer" = "Bison bison")
+phylopic_size <- c("Vulpes vulpes", "Odocoileus virginianus", "Camelops hesternus",
+                   "Bison bison", "Mammuthus columbi")         # Size 1 ... Size 5
 
 # Figure size (inches) and look.
 fig2_w <- 9;  fig2_h <- 5.2
@@ -430,6 +443,46 @@ icon_grob <- function(path_string, colour, height = 0.42, outline = NA) {
   pathGrob((xy$x - min(xy$x)) / w, 1 - (xy$y - min(xy$y)) / h, id = xy$id, rule = "evenodd",
            gp = gpar(fill = colour, col = outline, lwd = 0.6), vp = vp)
 }
+# PhyloPic silhouette grob (same corner and height as icon_grob); NULL if unavailable.
+phylopic_credits <- list()
+phylopic_grob <- function(taxon, colour, height = 0.42, outline = NA) {
+  img <- tryCatch({
+    uuid <- rphylopic::get_uuid(name = taxon, n = 1)
+    im <- rphylopic::get_phylopic(uuid = uuid, format = "raster", height = 512)
+    att <- tryCatch(rphylopic::get_attribution(uuid = uuid), error = function(e) NULL)
+    phylopic_credits[[taxon]] <<- data.frame(
+      Taxon = taxon, UUID = uuid,
+      Contributor = if (!is.null(att$contributor)) att$contributor else NA_character_,
+      License = if (!is.null(att$license)) att$license else NA_character_,
+      URL = paste0("https://www.phylopic.org/images/", uuid))
+    im
+  }, error = function(e) { message("  PhyloPic: no silhouette for ", taxon, " (", conditionMessage(e), ")"); NULL })
+  if (is.null(img)) return(NULL)
+  tint <- function(col) {                     # silhouette in one colour, keeping its transparency
+    out <- array(0, c(dim(img)[1:2], 4)); rgb <- col2rgb(col) / 255
+    for (k in 1:3) out[, , k] <- rgb[k]
+    out[, , 4] <- if (dim(img)[3] == 4) img[, , 4] else 1 - img[, , 1]
+    out
+  }
+  place <- function(arr, dx = 0, dy = 0)
+    rasterGrob(arr, x = unit(1, "npc") - unit(6 - dx, "pt"), y = unit(1, "npc") - unit(4 - dy, "pt"),
+               height = unit(height, "in"), just = c("right", "top"), interpolate = TRUE)
+  grobs <- list()
+  if (!is.na(outline)) {                      # thin outline for pale fills
+    o <- tint(outline)
+    grobs <- lapply(list(c(-0.7, 0), c(0.7, 0), c(0, -0.7), c(0, 0.7)), function(d) place(o, d[1], d[2]))
+  }
+  do.call(grobTree, c(grobs, list(place(tint(colour)))))
+}
+make_icon <- function(taxon, path_string, colour, outline = NA) {
+  g <- if (silhouette_source == "phylopic") phylopic_grob(taxon, colour, outline = outline) else NULL
+  if (is.null(g)) icon_grob(path_string, colour, outline = outline) else g
+}
+if (silhouette_source == "phylopic" && !requireNamespace("rphylopic", quietly = TRUE)) {
+  message("  rphylopic is not installed (install.packages(\"rphylopic\")); using the built-in silhouettes.")
+  silhouette_source <- "builtin"
+}
+
 # Add one icon per facet column to the panels of a given facet row.
 add_icons <- function(p, icons, row = 1, height = 0.42) {
   g <- ggplotGrob(p)
@@ -704,12 +757,16 @@ fig3_panel <- function(type, groups, colours, tag, curve = overall_pts) {
     x_scale +
     scale_y_continuous(breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v)) +
     coord_cartesian(xlim = c(x_max + 0.2, x_min - 0.2), ylim = c(0, 1.08), expand = FALSE) +
-    labs(x = "Age (Ma)", y = beta_lab, tag = tag) +
+    labs(x = "Age (Ma)", y = beta_lab, tag = if (panel_letters) tag else NULL) +
     theme_rowan()
 }
-diet_icons <- lapply(diet_groups, function(g) icon_grob(diet_silhouette(g), diet_colours[[g]]))
+diet_icons <- lapply(diet_groups, function(g) make_icon(phylopic_diet[[g]], diet_silhouette(g), diet_colours[[g]]))
 size_icons <- lapply(seq_along(size_groups), function(i)
-  icon_grob(size_silhouette_paths[[i]], size_colours[[i]], outline = if (i == 1) ink_soft else NA))
+  make_icon(phylopic_size[[i]], size_silhouette_paths[[i]], size_colours[[i]], outline = if (i == 1) ink_soft else NA))
+if (length(phylopic_credits)) {
+  write.csv(do.call(rbind, phylopic_credits), file.path(output_dir, "phylopic_credits.csv"), row.names = FALSE)
+  cat("  PhyloPic silhouettes used; credits in phylopic_credits.csv (cite contributors whose licence asks for it)\n")
+}
 g3a <- add_icons(fig3_panel("Diet", diet_groups, diet_colours, "a") + labs(x = NULL), diet_icons)
 g3b <- add_icons(fig3_panel("Size", size_groups, size_colours, "b"), size_icons)
 p3 <- patchwork::wrap_plots(patchwork::wrap_elements(g3a), patchwork::wrap_elements(g3b), ncol = 1)
@@ -746,7 +803,7 @@ fig4_panel <- function(type, groups, colours, tag, curve = overall_pts) {
     x_scale +
     scale_y_continuous(breaks = seq(0, 1, 0.25), labels = function(v) sprintf("%.2f", v)) +
     coord_cartesian(xlim = c(x_max + 0.2, x_min - 0.2), ylim = c(0, y_top), expand = FALSE) +
-    labs(x = "Age (Ma)", y = expression("Proportion;" ~ beta[SIM] ~ "(points)"), tag = tag) +
+    labs(x = "Age (Ma)", y = expression("Proportion;" ~ beta[SIM] ~ "(points)"), tag = if (panel_letters) tag else NULL) +
     theme_rowan() +
     theme(strip.text.y = element_blank(), strip.background.y = element_blank(),
           panel.spacing.y = unit(0.6, "lines"))
