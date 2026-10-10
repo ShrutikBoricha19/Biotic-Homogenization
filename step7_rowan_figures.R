@@ -71,8 +71,8 @@
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 5b.
 # Needs: dplyr, tidyr, ggplot2, readxl, patchwork (grid/gtable come with ggplot2);
 #        writexl for the Excel workbook.
-# Silhouettes: from PhyloPic via the rphylopic package (silhouette_source = "phylopic",
-#   credits written to phylopic_credits.csv), else the built-in diet icons (as in Step 8)
+# Silhouettes: from PhyloPic (phylopic.org API; silhouette_source = "phylopic", cached in
+#   Outputs/7_rowan_figures/phylopic/, credits in phylopic_credits.csv), else the built-in diet icons (as in Step 8)
 #   and size icons from game-icons.net (CC BY 3.0).
 # =============================================================================
 
@@ -140,15 +140,19 @@ equal_seed   <- 2024           #   (same seed and method, so the values match th
 page_fill    <- "white"          # figure background (change here, e.g. "#F7FAFD", for a tinted page)
 panel_letters <- FALSE           # TRUE = "a"/"b" tags on Figs. 3 and 4
 
-# Silhouettes on Figs. 3-4: "phylopic" downloads them from PhyloPic (phylopic.org) with the
-# rphylopic package (install.packages("rphylopic"); needs internet); "builtin" uses the
-# embedded silhouettes below. Any taxon PhyloPic cannot supply falls back to the built-in one.
+# Silhouettes on Figs. 3-4: "phylopic" downloads them from PhyloPic (phylopic.org; needs internet
+# the first time and the packages jsonlite and png, then works offline from the cache folder);
+# "builtin" uses the embedded silhouettes below. A taxon is looked up by its exact name, then by
+# its genus; to force a particular picture, put its PhyloPic image UUID in phylopic_uuid.
+# Any taxon PhyloPic cannot supply falls back to the built-in silhouette.
 silhouette_source <- "phylopic"
 phylopic_diet <- c("Carnivore" = "Smilodon fatalis", "Omnivore" = "Ursus americanus",
                    "Browser" = "Odocoileus virginianus", "Mixed feeder" = "Camelops hesternus",
                    "Grazer" = "Bison bison")
 phylopic_size <- c("Vulpes vulpes", "Odocoileus virginianus", "Camelops hesternus",
                    "Bison bison", "Mammuthus columbi")         # Size 1 ... Size 5
+phylopic_uuid <- c()        # optional, e.g. c("Bison bison" = "<image uuid from phylopic.org/images/...>")
+phylopic_refresh <- FALSE   # TRUE = download again even if a silhouette is already cached
 
 # Figure size (inches) and look.
 fig2_w <- 9;  fig2_h <- 5.2
@@ -443,25 +447,64 @@ icon_grob <- function(path_string, colour, height = 0.42, outline = NA) {
   pathGrob((xy$x - min(xy$x)) / w, 1 - (xy$y - min(xy$y)) / h, id = xy$id, rule = "evenodd",
            gp = gpar(fill = colour, col = outline, lwd = 0.6), vp = vp)
 }
-# PhyloPic silhouette grob (same corner and height as icon_grob); NULL if unavailable.
+# PhyloPic silhouettes, straight from the PhyloPic API (no extra package beyond jsonlite/png).
+phylopic_dir <- file.path(output_dir, "phylopic")
+phylopic_api <- "https://api.phylopic.org"
 phylopic_credits <- list()
+phylopic_json <- function(path) {
+  tmp <- tempfile(fileext = ".json")
+  suppressWarnings(download.file(paste0(phylopic_api, path), tmp, quiet = TRUE, mode = "wb",
+                                 headers = c(Accept = "application/vnd.phylopic.v2+json")))
+  jsonlite::fromJSON(tmp, simplifyVector = FALSE)
+}
+phylopic_build <- local({ b <- NULL; function() { if (is.null(b)) b <<- phylopic_json("/")$build; b } })
+phylopic_image_for_name <- function(name) {        # image record of a taxon's primary silhouette, or NULL
+  q <- utils::URLencode(tolower(trimws(name)), reserved = TRUE)
+  res <- phylopic_json(sprintf("/nodes?build=%s&filter_name=%s&page=0", phylopic_build(), q))
+  items <- res$`_links`$items
+  if (!length(items)) return(NULL)
+  node_uuid <- sub("^/nodes/([^?]+).*$", "\\1", items[[1]]$href)
+  node <- phylopic_json(sprintf("/nodes/%s?build=%s&embed_primaryImage=true", node_uuid, phylopic_build()))
+  node$`_embedded`$primaryImage
+}
+phylopic_image_by_uuid <- function(uuid) phylopic_json(sprintf("/images/%s?build=%s", uuid, phylopic_build()))
+phylopic_fetch <- function(taxon) {               # path of a cached PNG for the taxon, or NULL
+  dir.create(phylopic_dir, recursive = TRUE, showWarnings = FALSE)
+  key <- gsub("[^A-Za-z0-9]+", "_", taxon)
+  png_path <- file.path(phylopic_dir, paste0(key, ".png")); meta_path <- file.path(phylopic_dir, paste0(key, ".csv"))
+  if (!phylopic_refresh && file.exists(png_path) && file.exists(meta_path)) {
+    phylopic_credits[[taxon]] <<- read.csv(meta_path, stringsAsFactors = FALSE)
+    return(png_path)
+  }
+  img <- if (taxon %in% names(phylopic_uuid)) phylopic_image_by_uuid(phylopic_uuid[[taxon]]) else phylopic_image_for_name(taxon)
+  if (is.null(img) && grepl(" ", taxon)) img <- phylopic_image_for_name(sub(" .*$", "", taxon))   # genus
+  if (is.null(img)) stop("not found on PhyloPic")
+  rasters <- img$`_links`$rasterFiles
+  if (!length(rasters)) stop("no raster file")
+  widths <- vapply(rasters, function(r) as.numeric(sub("x.*$", "", r$sizes)), numeric(1))
+  pick <- rasters[[which.min(abs(widths - 512))]]
+  suppressWarnings(download.file(pick$href, png_path, quiet = TRUE, mode = "wb"))
+  meta <- data.frame(
+    Taxon = taxon, Image_UUID = img$uuid,
+    Contributor = if (!is.null(img$attribution)) img$attribution
+                  else if (!is.null(img$`_links`$contributor$title)) img$`_links`$contributor$title else NA_character_,
+    License = if (!is.null(img$`_links`$license$href)) img$`_links`$license$href else NA_character_,
+    URL = paste0("https://www.phylopic.org/images/", img$uuid), stringsAsFactors = FALSE)
+  write.csv(meta, meta_path, row.names = FALSE)
+  phylopic_credits[[taxon]] <<- meta
+  png_path
+}
+# Silhouette grob from PhyloPic (same corner and height as icon_grob); NULL if unavailable.
 phylopic_grob <- function(taxon, colour, height = 0.42, outline = NA) {
-  img <- tryCatch({
-    uuid <- rphylopic::get_uuid(name = taxon, n = 1)
-    im <- rphylopic::get_phylopic(uuid = uuid, format = "raster", height = 512)
-    att <- tryCatch(rphylopic::get_attribution(uuid = uuid), error = function(e) NULL)
-    phylopic_credits[[taxon]] <<- data.frame(
-      Taxon = taxon, UUID = uuid,
-      Contributor = if (!is.null(att$contributor)) att$contributor else NA_character_,
-      License = if (!is.null(att$license)) att$license else NA_character_,
-      URL = paste0("https://www.phylopic.org/images/", uuid))
-    im
-  }, error = function(e) { message("  PhyloPic: no silhouette for ", taxon, " (", conditionMessage(e), ")"); NULL })
+  img <- tryCatch(png::readPNG(phylopic_fetch(taxon)),
+                  error = function(e) { message("  PhyloPic: no silhouette for ", taxon, " (", conditionMessage(e), ")"); NULL })
   if (is.null(img)) return(NULL)
+  if (length(dim(img)) == 2) img <- array(rep(img, 2), c(dim(img), 2))       # grey -> grey + alpha
+  alpha <- switch(as.character(dim(img)[3]), "2" = img[, , 2], "4" = img[, , 4], 1 - img[, , 1])
   tint <- function(col) {                     # silhouette in one colour, keeping its transparency
     out <- array(0, c(dim(img)[1:2], 4)); rgb <- col2rgb(col) / 255
     for (k in 1:3) out[, , k] <- rgb[k]
-    out[, , 4] <- if (dim(img)[3] == 4) img[, , 4] else 1 - img[, , 1]
+    out[, , 4] <- alpha
     out
   }
   place <- function(arr, dx = 0, dy = 0)
@@ -478,9 +521,12 @@ make_icon <- function(taxon, path_string, colour, outline = NA) {
   g <- if (silhouette_source == "phylopic") phylopic_grob(taxon, colour, outline = outline) else NULL
   if (is.null(g)) icon_grob(path_string, colour, outline = outline) else g
 }
-if (silhouette_source == "phylopic" && !requireNamespace("rphylopic", quietly = TRUE)) {
-  message("  rphylopic is not installed (install.packages(\"rphylopic\")); using the built-in silhouettes.")
-  silhouette_source <- "builtin"
+if (silhouette_source == "phylopic") {
+  miss <- c("jsonlite", "png")[!vapply(c("jsonlite", "png"), requireNamespace, logical(1), quietly = TRUE)]
+  if (length(miss)) {
+    message("  For PhyloPic silhouettes install: ", paste(miss, collapse = ", "), "; using the built-in silhouettes.")
+    silhouette_source <- "builtin"
+  }
 }
 
 # Add one icon per facet column to the panels of a given facet row.
@@ -765,7 +811,7 @@ size_icons <- lapply(seq_along(size_groups), function(i)
   make_icon(phylopic_size[[i]], size_silhouette_paths[[i]], size_colours[[i]], outline = if (i == 1) ink_soft else NA))
 if (length(phylopic_credits)) {
   write.csv(do.call(rbind, phylopic_credits), file.path(output_dir, "phylopic_credits.csv"), row.names = FALSE)
-  cat("  PhyloPic silhouettes used; credits in phylopic_credits.csv (cite contributors whose licence asks for it)\n")
+  cat("  PhyloPic silhouettes used; credits in phylopic_credits.csv (credit the contributors on your slide)\n")
 }
 g3a <- add_icons(fig3_panel("Diet", diet_groups, diet_colours, "a") + labs(x = NULL), diet_icons)
 g3b <- add_icons(fig3_panel("Size", size_groups, size_colours, "b"), size_icons)
