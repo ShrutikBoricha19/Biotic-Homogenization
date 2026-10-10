@@ -32,7 +32,8 @@ work_dir <- "C:/Users/shrut/OneDrive/Documents/Data D/Ph.D/Research/Dissertation
 
 pa_file     <- file.path("Outputs", "7_rowan_figures", "regional_pa_matrices.rds")
 traits_file <- file.path("Outputs", "7_rowan_figures", "species_traits.csv")
-step7_file  <- "step7_rowan_figures.R"      # source of the silhouettes (in work_dir)
+step7_file  <- "step7_rowan_figures.R"      # Step 7 script (source of the silhouettes): full path, or
+                                            # left as is to look next to this script and in work_dir
 output_dir  <- file.path(work_dir, "Outputs", "7_rowan_figures")
 
 diet_groups <- c("Carnivore", "Omnivore", "Browser", "Mixed feeder", "Grazer")
@@ -59,6 +60,21 @@ pa     <- readRDS(pa_file)
 traits <- read.csv(traits_file, stringsAsFactors = FALSE, check.names = FALSE)
 
 # Silhouettes: the path strings defined in Step 7.
+find_step7 <- function(f) {
+  here <- tryCatch(dirname(rstudioapi::getSourceEditorContext()$path), error = function(e) NA_character_)
+  if (is.na(here) || !nzchar(here)) here <- tryCatch(dirname(sys.frame(1)$ofile), error = function(e) NA_character_)
+  cands <- unique(c(f, file.path(c(here, work_dir, getwd()), basename(f))))
+  hit <- cands[!is.na(cands) & file.exists(cands)]
+  if (!length(hit)) {                                   # last resort: search under work_dir
+    found <- list.files(work_dir, pattern = paste0("^", basename(f), "$"), recursive = TRUE, full.names = TRUE)
+    hit <- found
+  }
+  if (!length(hit)) stop("Cannot find ", basename(f), ". Set step7_file to its full path, e.g.\n",
+                         "  step7_file <- \"C:/Users/shrut/.../step7_rowan_figures.R\"")
+  hit[1]
+}
+step7_file <- find_step7(step7_file)
+cat("  Silhouettes and PhyloPic settings from", step7_file, "\n")
 s7 <- readLines(step7_file, warn = FALSE)
 i0 <- grep("^diet_silhouette_paths <- c\\(", s7); i1 <- grep("^diet_silhouette <- function", s7)
 if (!length(i0) || !length(i1)) stop("Silhouettes not found in ", step7_file)
