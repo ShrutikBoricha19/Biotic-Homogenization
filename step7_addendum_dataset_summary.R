@@ -12,12 +12,14 @@
 #
 # Outputs (Outputs/7_rowan_figures/):
 #   dataset_summary.png/.pdf    the graphic
+#   dataset_summary_diet_size.png/.pdf   short version: only the diet and body size columns
 #   dataset_summary_facts.csv   the numbers shown on it
 #
 # Inputs: Outputs/7_rowan_figures/regional_pa_matrices.rds and species_traits.csv
-#         (Step 7); the silhouettes are read from step7_rowan_figures.R.
+#         (Step 7); the silhouettes come from PhyloPic exactly as in Step 7 (same taxa, same
+#         cache in Outputs/7_rowan_figures/phylopic/), or from step7_rowan_figures.R's built-in ones.
 # Run the whole file (Ctrl+Shift+S in RStudio) after Step 7.
-# Needs: base R only (grid).
+# Needs: base R (grid); jsonlite and png for the PhyloPic silhouettes.
 # =============================================================================
 
 library(grid)
@@ -44,6 +46,8 @@ ink_soft  <- "#3E4C6D"
 rule_col  <- "#D6E6F5"
 font      <- "sans"            # "sans" = Helvetica/Arial
 fig_w <- 13.33; fig_h <- 7.5; fig_dpi <- 300
+short_w <- 10; short_h <- 4.8              # size of the short (diet + body size) version
+silhouette_source <- "phylopic"            # "phylopic" (taxa and cache as in Step 7) or "builtin"
 
 # =============================================================================
 # 1. DATA
@@ -59,6 +63,19 @@ s7 <- readLines(step7_file, warn = FALSE)
 i0 <- grep("^diet_silhouette_paths <- c\\(", s7); i1 <- grep("^diet_silhouette <- function", s7)
 if (!length(i0) || !length(i1)) stop("Silhouettes not found in ", step7_file)
 eval(parse(text = s7[i0:(i1 - 1)]))
+# PhyloPic: the taxa and download helpers defined in Step 7.
+if (silhouette_source == "phylopic") {
+  j0 <- grep("^phylopic_diet <- c\\(", s7); j1 <- grep("^phylopic_refresh <-", s7)
+  k0 <- grep("^# PhyloPic silhouettes, straight from", s7); k1 <- grep("^# Silhouette grob from PhyloPic", s7)
+  ok <- length(j0) && length(j1) && length(k0) && length(k1) &&
+        all(vapply(c("jsonlite", "png"), requireNamespace, logical(1), quietly = TRUE))
+  if (ok) {
+    eval(parse(text = s7[j0:j1])); eval(parse(text = s7[k0:(k1 - 1)]))
+  } else {
+    message("  PhyloPic code or the jsonlite/png packages not found; using the built-in silhouettes.")
+    silhouette_source <- "builtin"
+  }
+}
 
 species <- sort(unique(unlist(lapply(pa, colnames))))
 sp <- traits[match(species, traits$Species), ]
@@ -117,20 +134,51 @@ silhouette <- function(path_string, x, y, h, col) {
             gp = gpar(fill = col, col = if (col == size_colours[[1]]) ink_soft else NA, lwd = 0.6))
   popViewport()
 }
+# PhyloPic silhouette centred at (x, y), h inches tall; FALSE if it could not be drawn.
+phylopic_memo <- new.env()                    # one download attempt per taxon
+phylopic_icon <- function(taxon, x, y, h, col) {
+  if (is.na(taxon)) return(FALSE)
+  if (!exists(taxon, envir = phylopic_memo, inherits = FALSE))
+    assign(taxon, tryCatch(png::readPNG(phylopic_fetch(taxon)), error = function(e) {
+      message("  PhyloPic: no silhouette for ", taxon, " (", conditionMessage(e), ")"); NULL }), envir = phylopic_memo)
+  img <- get(taxon, envir = phylopic_memo)
+  if (is.null(img)) return(FALSE)
+  if (length(dim(img)) == 2) img <- array(rep(img, 2), c(dim(img), 2))
+  alpha <- switch(as.character(dim(img)[3]), "2" = img[, , 2], "4" = img[, , 4], 1 - img[, , 1])
+  tint <- function(cl) { out <- array(0, c(dim(img)[1:2], 4)); rgb <- col2rgb(cl) / 255
+                         for (k in 1:3) out[, , k] <- rgb[k]; out[, , 4] <- alpha; out }
+  w <- h * dim(img)[2] / dim(img)[1]
+  if (w > 1.6 * h) { w <- 1.6 * h; h <- w * dim(img)[1] / dim(img)[2] }     # keep wide animals in their slot
+  if (col == size_colours[[1]])                                              # thin outline for the pale yellow
+    for (d in list(c(-0.7, 0), c(0.7, 0), c(0, -0.7), c(0, 0.7)))
+      grid.raster(tint(ink_soft), x + unit(d[1], "pt"), y + unit(d[2], "pt"), unit(w, "in"), unit(h, "in"), interpolate = TRUE)
+  grid.raster(tint(col), x, y, unit(w, "in"), unit(h, "in"), interpolate = TRUE)
+  TRUE
+}
+icon <- function(taxon, path_string, x, y, h, col) {
+  if (silhouette_source == "phylopic" && phylopic_icon(taxon, x, y, h, col)) return(invisible())
+  silhouette(path_string, x, y, h, col)
+}
 txt <- function(label, x, y, size, col = ink, face = "plain", just = "left")
   grid.text(label, x, y, just = just, gp = gpar(fontfamily = font, fontsize = size, col = col, fontface = face))
 
-bar_block <- function(x0, title, groups, counts, colours, paths, labels) {
-  txt(title, x0, 0.75, 17, face = "bold")
-  grid.lines(c(x0, x0 + 0.27), c(0.725, 0.725), gp = gpar(col = rule_col, lwd = 1.5))
+# One column of labelled bars. x0, top: npc; col_w and bar_w: npc; step: npc between rows.
+bar_block <- function(x0, title, groups, counts, colours, taxa, paths, labels,
+                      top = 0.75, step = 0.105, col_w = 0.27, bar_w = 0.19, title_size = 17) {
+  txt(title, x0, top, title_size, face = "bold")
+  grid.lines(c(x0, x0 + col_w), c(top - step * 0.25, top - step * 0.25), gp = gpar(col = rule_col, lwd = 1.5))
   max_n <- max(counts, 1)
+  bx <- unit(x0, "npc") + unit(0.6, "in")                     # bars start right of the silhouettes
   for (i in seq_along(groups)) {
-    y <- 0.655 - (i - 1) * 0.105
-    silhouette(paths[[i]], unit(x0 + 0.018, "npc"), unit(y, "npc"), 0.42, colours[[i]])
-    txt(labels[i], x0 + 0.045, y + 0.022, 12.5, ink_soft)
-    grid.rect(x0 + 0.045, y - 0.018, 0.19 * counts[[i]] / max_n, 0.022, just = c("left", "centre"),
+    y <- top - step * 0.9 - (i - 1) * step
+    icon(taxa[i], paths[[i]], unit(x0, "npc") + unit(0.25, "in"), unit(y, "npc"), 0.42, colours[[i]])
+    grid.text(labels[i], bx, unit(y + step * 0.21, "npc"), just = "left",
+              gp = gpar(fontfamily = font, fontsize = 12.5, col = ink_soft))
+    len <- bar_w * counts[[i]] / max_n
+    grid.rect(bx, unit(y - step * 0.17, "npc"), unit(len, "npc"), unit(step * 0.21, "npc"), just = c("left", "centre"),
               gp = gpar(fill = colours[[i]], col = if (colours[[i]] == size_colours[[1]]) ink_soft else NA, lwd = 0.6))
-    txt(counts[[i]], x0 + 0.05 + 0.19 * counts[[i]] / max_n, y - 0.018, 13, face = "bold")
+    grid.text(counts[[i]], bx + unit(len, "npc") + unit(0.07, "in"), unit(y - step * 0.17, "npc"), just = "left",
+              gp = gpar(fontfamily = font, fontsize = 13, col = ink, fontface = "bold"))
   }
 }
 
@@ -138,6 +186,16 @@ fact <- function(y, label, name, value, italic = TRUE, value_italic = FALSE) {
   txt(toupper(label), 0.70, y + 0.035, 10.5, ink_soft, "bold")
   txt(name, 0.70, y, 15, ink, if (italic) "italic" else "plain")
   txt(value, 0.70, y - 0.036, 12.5, ink_soft, if (value_italic) "italic" else "plain")
+}
+
+diet_taxa <- if (exists("phylopic_diet")) unname(phylopic_diet[diet_groups]) else rep(NA, 5)
+size_taxa <- if (exists("phylopic_size")) unname(phylopic_size) else rep(NA, 5)
+size_labels <- sub("^(Size \\d) \\((.*)\\)$", "\\1  \u00b7  \\2", size_groups)
+diet_columns <- function(x_diet, x_size, ...) {
+  bar_block(x_diet, "Diet", diet_groups, diet_n, diet_colours, diet_taxa,
+            lapply(diet_groups, function(g) diet_silhouette_paths[[g]]), diet_groups, ...)
+  bar_block(x_size, "Body size", size_groups, size_n, size_colours, size_taxa,
+            as.list(size_silhouette_paths), size_labels, ...)
 }
 
 draw <- function() {
@@ -151,10 +209,7 @@ draw <- function() {
   txt(sprintf("%d orders  \u00b7  %d families  \u00b7  3 provinces  \u00b7  5 time bins, 3.25 Ma to 11.7 ka",
               n_orders, n_families), hx, 0.868, 13, ink_soft)
 
-  diet_paths <- lapply(diet_groups, function(g) diet_silhouette_paths[[g]])
-  bar_block(0.04, "Diet", diet_groups, diet_n, diet_colours, diet_paths, diet_groups)
-  bar_block(0.36, "Body size", size_groups, size_n, size_colours, as.list(size_silhouette_paths),
-            sub("^(Size \\d) \\((.*)\\)$", "\\1  \u00b7  \\2", size_groups))
+  diet_columns(0.04, 0.36)
 
   txt("Facts", 0.70, 0.75, 17, face = "bold")
   grid.lines(c(0.70, 0.96), c(0.725, 0.725), gp = gpar(col = rule_col, lwd = 1.5))
@@ -173,11 +228,23 @@ draw <- function() {
   txt(foot, 0.04, 0.045, 10.5, ink_soft)
 }
 
+draw_short <- function() {
+  grid.newpage()
+  grid.rect(gp = gpar(fill = "white", col = NA))
+  diet_columns(0.05, 0.53, top = 0.92, step = 0.172, col_w = 0.42, bar_w = 0.27, title_size = 18)
+}
+
+save_both <- function(fun, name, w, h) {
+  png(file.path(output_dir, paste0(name, ".png")), width = w, height = h, units = "in", res = fig_dpi,
+      type = if (capabilities("cairo")) "cairo" else "windows")
+  fun(); invisible(dev.off())
+  pdf_dev <- if (capabilities("cairo")) cairo_pdf else pdf
+  pdf_dev(file.path(output_dir, paste0(name, ".pdf")), width = w, height = h)
+  fun(); invisible(dev.off())
+}
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-png(file.path(output_dir, "dataset_summary.png"), width = fig_w, height = fig_h, units = "in", res = fig_dpi,
-    type = if (capabilities("cairo")) "cairo" else "windows")
-draw(); invisible(dev.off())
-pdf_dev <- if (capabilities("cairo")) cairo_pdf else pdf
-pdf_dev(file.path(output_dir, "dataset_summary.pdf"), width = fig_w, height = fig_h)
-draw(); invisible(dev.off())
-cat("\nSaved dataset_summary.png/.pdf and dataset_summary_facts.csv to", output_dir, "\n")
+save_both(draw, "dataset_summary", fig_w, fig_h)
+save_both(draw_short, "dataset_summary_diet_size", short_w, short_h)
+if (exists("phylopic_credits") && length(phylopic_credits))
+  write.csv(do.call(rbind, phylopic_credits), file.path(output_dir, "phylopic_credits.csv"), row.names = FALSE)
+cat("\nSaved dataset_summary, dataset_summary_diet_size (.png/.pdf) and dataset_summary_facts.csv to", output_dir, "\n")
