@@ -124,6 +124,8 @@ ink <- "#1F2A44"; ink_soft <- "#3E4C6D"; band_fill <- "#F6EBD0"; strip_fill <- "
 base_size <- 13; fig_dpi <- 300
 
 # -----------------------------------------------------------------------------
+# A sourced origin table, taxon_origins.csv (Source and Source_detail columns), is
+# saved in the repository: copy it to work_dir and it is used instead of this list.
 # ORIGIN LOOKUP: a STARTING POINT only, compiled from the GABI and Beringian
 # literature (Morgan 2005; Woodburne 2010; Bell et al. 2004; Lister & Sher 2015;
 # MacFadden & Hulbert 2009; Froese et al. 2017). Arrival ages (Ma, first
@@ -134,16 +136,17 @@ base_size <- 13; fig_dpi <- 300
 origin_lookup <- tribble(
   ~Taxon,             ~Origin,          ~Arrival_Ma, ~Derived, ~Note,
   # South American immigrants (GABI)
-  "Glyptotherium",    "South American", 2.7,   FALSE, "GABI 1 (Morgan 2005; Woodburne 2010)",
-  "Holmesina",        "South American", 2.6,   FALSE, "late Blancan; Florida and Texas",
-  "Pampatherium",     "South American", NA,    FALSE, "verify arrival",
-  "Dasypus",          "South American", NA,    FALSE, "late Blancan in Florida (Morgan 2005); verify",
-  "Pachyarmatherium", "South American", NA,    FALSE, "late Blancan; 'primarily restricted to Florida' (Morgan 2005)",
-  "Glossotherium",    "South American", 2.6,   FALSE, "GABI; Florida and the west (Morgan 2005)",
+  "Glyptotherium",    "South American", 2.7,   FALSE, "Woodburne 2010 p. 250: arrived in North America ~2.7 Ma",
+  "Holmesina",        "South American", 2.4,   FALSE, "Woodburne 2010 p. 251: entered the US ~2.4 Ma (GABI 1)",
+  "Pampatherium",     "South American", 2.4,   FALSE, "Woodburne 2010 p. 251: entered the US from Mexico ~2.4 Ma",
+  "Dasypus",          "South American", 2.4,   FALSE, "Woodburne 2010 p. 251: entered the US ~2.4 Ma (GABI 1)",
+  "Pachyarmatherium", "South American", 2.4,   FALSE, "Woodburne 2010 p. 251: entered the US ~2.4 Ma (GABI 1)",
+  "Glossotherium",    "South American", 3.0,   FALSE, "Woodburne 2010 p. 250: Arizona ~3.0 Ma; South American origin",
   "Paramylodon",      "South American", NA,    TRUE,  "North American descendant of the Glossotherium immigrant",
-  "Eremotherium",     "South American", NA,    FALSE, "late Blancan; 'primarily restricted to Florida' (Morgan 2005)",
-  "Nothrotheriops",   "South American", NA,    TRUE,  "verify lineage and arrival",
-  "Megalonyx",        "South American", 9,     TRUE,  "Hemphillian arrival (~9 Ma): established before the window",
+  "Eremotherium",     "South American", 2.4,   FALSE, "Woodburne 2010 p. 251: entered the US ~2.4 Ma (GABI 1)",
+  "Nothrotheriops",   "South American", 1.3,   FALSE, "Woodburne 2010 p. 251: dispersal at 1.3 Ma (Leisey Shell Pit)",
+  "Myrmecophaga",     "South American", 1.7,   FALSE, "Woodburne 2010 p. 251: Sonora ~1.6-1.8 Ma",
+  "Megalonyx",        "South American", 7,     TRUE,  "Woodburne 2010 p. 248: from Pliometanastes ~7 Ma; established before the window",
   "Hydrochoerus",     "South American", NA,    FALSE, "rodent (not in the large-mammal orders)",
   "Neochoerus",       "South American", NA,    FALSE, "rodent (not in the large-mammal orders)",
   "Erethizon",        "South American", NA,    FALSE, "rodent (not in the large-mammal orders)",

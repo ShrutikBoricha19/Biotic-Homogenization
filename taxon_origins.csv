@@ -1,0 +1,88 @@
+Taxon,Rank,Origin,Arrival_Ma,Derived,Source,Source_detail,Verified_in_project,Note
+Dasypus,genus,South American,2.4,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: entered the United States at about 2.4 Ma with Pampatherium: ""a dasypodid armadillo (Dasypus)""; GABI 1 dated 2.6-2.4 Ma (p. 252).",True,"Morgan (2005, quoted in the planning document): primarily restricted to Florida in the late Blancan"
+Didelphis,genus,South American,0.8,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: ""At about 0.8 Ma (~0.8-1.0 Ma) the marsupial Didelphis entered North America"".",True,Marsupial: not in the large-mammal orders
+Eremotherium,genus,South American,2.4,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: entered the United States at about 2.4 Ma with Pampatherium: ""a megatheriid sloth (Eremotherium)""; GABI 1 dated 2.6-2.4 Ma (p. 252).",True,"Morgan (2005, quoted in the planning document): primarily restricted to Florida in the late Blancan"
+Erethizon,genus,South American,2.6,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: first South American record ""at about 2.6 Ma, essentially coeval with its dispersal to North America"".",True,Rodent: not in the large-mammal orders
+Glossotherium,genus,South American,3.0,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 250: ""Tomida (1987) documented Glossotherium in Arizona at about 3.0 Ma ... Glossotherium is considered to have originated in South America""; in Mexico at 4.7-4.8 Ma.",True,
+Glyptotherium,genus,South American,2.7,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 250: ""Glyptotherium arrived in North America at about 2.7 Ma, but this is not considered part of GABI 1 due to its previous presence in Mexico (ca 3.8 Ma).""",True,
+Holmesina,genus,South American,2.4,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: entered the United States at about 2.4 Ma with Pampatherium: ""its through-moving relative Holmesina""; GABI 1 dated 2.6-2.4 Ma (p. 252).",True,"Morgan (2005, quoted in the planning document): primarily restricted to Florida in the late Blancan"
+Hydrochoerus,genus,South American,2.2,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: ""Hydrochoerus is present in Florida at about 2.2 Ma"".",True,Rodent: not in the large-mammal orders
+Megalonyx,genus,South American,7,True,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 248: ""the origin of Megalonyx from Pliometanastes at about 7 Ma"" (Pliometanastes a South American-derived immigrant, ca 8.5-9 Ma).",True,Established in North America long before the study window (counts as native with immigrant_since_ma = 5)
+Mixotoxodon,genus,South American,1.5,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: ""Mixotoxodon is recorded from the early Pleistocene Barranca del Sisimico Local Fauna of El Salvador""; 1.5 Ma approximate.",True,Notoungulate (not in the large-mammal orders); Central American record
+Myrmecophaga,genus,South American,1.7,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: ""the South American vermilinguan immigrant Myrmecophaga ... known from the El Golfo L.F. of Sonora, Mexico (North America) at about 1.6-1.8 Ma""; p. 252: GABI 2 brought ""a myrmecophagid xenarthran to the north"".",True,
+Neochoerus,genus,South American,3.8,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 254: ""the 3.8 Ma entry of Neochoerus to Mexico (and South Carolina)"".",True,Rodent: not in the large-mammal orders
+Nothrotheriops,genus,South American,1.3,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: ""The dispersal at 1.3 Ma is represented by the megatheriid Nothrotheriops from the Leisey Shell Pit, Florida.""",True,"Older (~2.1 Ma) California record revised to another taxon by Morgan (2005), per Woodburne p. 251"
+Pachyarmatherium,genus,South American,2.4,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: entered the United States at about 2.4 Ma with Pampatherium: ""a glyptodontid (Pachyarmatherium)""; GABI 1 dated 2.6-2.4 Ma (p. 252).",True,"Morgan (2005, quoted in the planning document): primarily restricted to Florida in the late Blancan"
+Pampatherium,genus,South American,2.4,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: ""Beginning about 2.4 Ma, the pampatheriid xenarthran Pampatherium entered the United States from Mexico (a laggard from a 3.7 Ma holding pen...)""",True,
+Paramylodon,genus,South American,,True,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: ""the USA endemic mylodontid Paramylodon""; ""Paramylodon descended from the North American taxon Glossotherium chapadmalalense.""",True,North American descendant of a South American immigrant lineage (secondarily endemic)
+Pliometanastes,genus,South American,9,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 248: sloths ""Thinobadistes and Pliometanastes found in faunas of early Hemphillian age (ca 8.5-9 Ma) in North America"".",True,Before the study window
+Thinobadistes,genus,South American,9,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264",p. 248: early Hemphillian (ca 8.5-9 Ma).,True,Before the study window
+Alces,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Alopex lagopus,species,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,Older name for the Arctic fox
+Bison,genus,Eurasian,0.195,False,"Froese, D. et al. 2017. PNAS 114:3457-3462","MIS 6 arrival, 195-135 ka; second wave 45-21 ka (as summarized in the planning document; paper not read in this project).",False,
+Bootherium,genus,Eurasian,,True,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,North American ovibovine of Eurasian stock
+Canis lupus,species,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,Species row overrides the native genus Canis
+Cervalces,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Cervus,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Cuon,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Euceratherium,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Gulo,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Mammuthus,genus,Eurasian,1.4,False,"Lister, A. M. & Sher, A. V. 2015. Science 350:805-809","p. 805: ""The earliest mammoths in North America, and hence their likely time of arrival, date to ~1.5 to 1.3 Ma.""",True,Florida ~2.5 Ma record reworked (MacFadden & Hulbert 2009; via the planning document)
+Oreamnos,genus,Eurasian,,True,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,North American caprine of Old World stock
+Ovibos,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Ovis,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Panthera,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),"Eurasian origin from background knowledge. Woodburne (2010, p. 251) lists Panthera among North American genera dispersing to South America at ~1.8 Ma, so it was in North America by then.",False,Arrival age unknown: set Arrival_Ma if it predates 5 Ma
+Praeovibos,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Rangifer,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Saiga,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Soergelia,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Ursus arctos,species,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,Species row overrides the genus
+Vulpes lagopus,species,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Xenocyon,genus,Eurasian,,False,Background knowledge only - not checked against a source read in this project (check Bell et al. 2004; Kurten & Anderson 1980),,False,
+Antilocapra,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Blancocamelus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Blastocerus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Camelops,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Canis,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 252: listed among genera dispersing from North to South America in GABI 4 (~0.125 Ma): ""Canis"".",True,Species-level rows override (e.g. Canis lupus)
+Capromeryx,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Cormohipparion,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Cuvieronius,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: listed among North American genera that dispersed to South America in GABI 2 (~1.8 Ma): ""Cuvieronius"".",True,
+Equus,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 252: listed among genera dispersing from North to South America in GABI 4 (~0.125 Ma): ""Equus"".",True,
+Gigantocamelus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Hayoceros,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Hemiauchenia,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: listed among North American genera that dispersed to South America in GABI 2 (~1.8 Ma): ""Hemiauchenia"".",True,
+Leopardus,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 252: listed among genera dispersing from North to South America in GABI 4 (~0.125 Ma): ""Leopardus"".",True,
+Leptotylopus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Lutra,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 252: listed among genera dispersing from North to South America in GABI 4 (~0.125 Ma): ""Lutra"".",True,
+Mammut,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Megatylopus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Mylohyus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Nannippus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Nasua,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 252: listed among genera dispersing from North to South America in GABI 4 (~0.125 Ma): ""Nasua"".",True,
+Navahoceros,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Odocoileus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Palaeolama,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: listed among North American genera that dispersed to South America in GABI 2 (~1.8 Ma): ""Palaeolama"".",True,
+Platygonus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Pliauchenia,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Prosthennops,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Puma,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: listed among North American genera that dispersed to South America in GABI 2 (~1.8 Ma): ""Puma"".",True,
+Repocerus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Rhynchotherium,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Sangamona,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Smilodon,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: listed among North American genera that dispersed to South America in GABI 2 (~1.8 Ma): ""Smilodon"".",True,
+Stegomastodon,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: listed among North American genera that dispersed to South America in GABI 2 (~1.8 Ma): ""Stegomastodon"".",True,
+Stockoceros,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Sylvilagus,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 252: listed among genera dispersing from North to South America in GABI 4 (~0.125 Ma): ""Sylvilagus"".",True,
+Tapirus,genus,Native,,False,"Woodburne, M. O. 2010. J. Mammal. Evol. 17:245-264","p. 251: listed among North American genera that dispersed to South America in GABI 2 (~1.8 Ma): ""Tapirus"".",True,
+Tayassu,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Tetrameryx,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Texoceros,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Titanotylopus,genus,Native,,False,Not listed as an immigrant in Woodburne (2010; South American immigrants); Eurasian origin not checked,,False,Assumed native
+Bos,genus,Exclude,,False,Identity (human or domestic/historic species),domestic cattle (historic),True,Not part of the Pleistocene fauna
+Canis familiaris,species,Exclude,,False,Identity (human or domestic/historic species),domestic dog,True,Not part of the Pleistocene fauna
+Capra,genus,Exclude,,False,Identity (human or domestic/historic species),domestic goat (historic),True,Not part of the Pleistocene fauna
+Equus asinus,species,Exclude,,False,Identity (human or domestic/historic species),donkey (historic),True,Not part of the Pleistocene fauna
+Felis catus,species,Exclude,,False,Identity (human or domestic/historic species),domestic cat (historic),True,Not part of the Pleistocene fauna
+Homo,genus,Exclude,,False,Identity (human or domestic/historic species),humans,True,Not part of the Pleistocene fauna
+Ovis aries,species,Exclude,,False,Identity (human or domestic/historic species),domestic sheep (historic),True,Not part of the Pleistocene fauna
+Sus,genus,Exclude,,False,Identity (human or domestic/historic species),domestic pig (historic),True,Not part of the Pleistocene fauna

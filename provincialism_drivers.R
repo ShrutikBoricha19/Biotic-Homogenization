@@ -23,11 +23,9 @@
 #   - province-bins with fewer cells than the quota are reported as
 #     insufficient (the quota is not lowered for single bins); lower quotas are
 #     run as a separate, clearly labelled sensitivity check;
-#   - Rowan et al.'s sensitivity checks: shifted bin starts (0.15-Myr steps),
-#     identifications (all names vs names "as identified" only - the full
-#     cf./aff. four-matrix check needs Step 3d variants, see notes), and
+#   - Rowan et al.'s sensitivity checks: shifted bin starts (0.15-Myr steps) and
 #     regressions of beta_SIM and its diet/size partitions on sampling tallies
-#     (Holm-corrected);
+#     (Holm-corrected); the open-nomenclature check (Step 3D) is skipped;
 #   - power analysis by simulation: known drops in beta_SIM are planted into
 #     resampled data and the Chapter 1 site-bootstrap test is applied.
 #   The in-script cookies/clustr replicate divvy's algorithms (findPool /
@@ -63,8 +61,17 @@
 #   province (Silvestro et al. 2014) for origination rates.
 #
 # MATERIALS (optional; the script runs without them and says what is missing):
-#   climate_index.csv  - one row per raster: variable, age_ka, file
-#                        (variables used: MAT, MAP, seasonality, open_habitat)
+#   oscillayers_dir    - folder of Oscillayers bioclim layers (Gamisch 2019; Dryad
+#                        doi:10.5061/dryad.27f8s90): ESRI ASCII grids, 19 bioclim
+#                        variables for 539 10-kyr periods, 5.4 Ma - LGM (20 ka).
+#                        Bio1 (mean annual temperature), Bio12 (annual precipitation)
+#                        and Bio4 (temperature seasonality) are used.
+#   andermann_dir      - folder of the Andermann et al. (2022) open-habitat
+#                        predictions (Zenodo doi:10.5281/zenodo.6492100): 0.5-degree
+#                        grids in 1-Myr steps (0-30 Ma), as rasters or as text
+#                        tables with longitude, latitude and P(open).
+#   climate_index.csv  - alternative: one row per raster (variable, age_ka, file),
+#                        for any other climate source (e.g. PaleoClim snapshots)
 #   dem_file           - an elevation raster (GeoTIFF) for topographic roughness
 #   taxon_origins.csv  - the checked origin table from ch2_immigrants.R
 #
@@ -99,8 +106,16 @@ traits_file  <- file.path("Outputs", "7_rowan_figures", "species_traits.csv")
 bins_file    <- file.path("Outputs", "3d_resolved", "time_bins.csv")
 layers_file  <- file.path("Outputs", "3_spatial", "spatial_layers.rds")
 rivers_file  <- file.path("Outputs", "maps", "basemap", "ne_10m_rivers_lake_centerlines.geojson")
-origins_file <- "taxon_origins.csv"                     # from ch2_immigrants.R (checked)
-climate_index_file <- "climate_index.csv"               # optional (Module 3)
+origins_file <- "taxon_origins.csv"                     # sourced origin table (repository copy; place it in work_dir)
+immigrant_since_ma <- 5                                 # as ch2_immigrants.R: earlier arrivals count as native
+climate_index_file <- "climate_index.csv"               # optional (Module 3); built automatically from the two folders below
+oscillayers_dir <- NA      # e.g. "C:/Users/shrut/Downloads/Oscillayers"  (Gamisch 2019)
+osc_var_regex   <- "[Bb]io_?0?(1|4|12)[^0-9]"          # file-name pattern for Bio1, Bio4, Bio12
+osc_time_regex  <- "[Tt]_?([0-9]+)"                     # file-name pattern for the time-period number T
+osc_ka_per_step <- 10      # Oscillayers: period T = T x 10 kyr before present (paper: T3 = 30 kyr, T4 = 40 kyr)
+osc_use_every   <- 5       # use every 5th 10-kyr period (50-kyr steps) to keep extraction time reasonable
+andermann_dir   <- NA      # e.g. "C:/Users/shrut/Downloads/Andermann_2022/predictions" (open-habitat maps)
+andermann_time_regex <- "([0-9]+(\\.[0-9]+)?)[ _]?(MA|Ma|ma|myr)?"   # time (Ma) in each file name
 dem_file     <- NA                                      # optional elevation GeoTIFF (Module 3)
 output_root  <- file.path(work_dir, "Outputs", "provincialism")
 
@@ -466,7 +481,7 @@ if (0 %in% run_modules) {
                    caption = "Rowan et al. (2024) bin-placement check: bin starts shifted younger in 0.15-Myr steps.") + theme_p()
   save_fig(p, dir0, "M0_fig2_bin_shift_check", 9, 5.4)
 
-  if ("Name_Status" %in% names(occ)) {
+  if (FALSE && "Name_Status" %in% names(occ)) {         # open-nomenclature check (Step 3D) skipped
     nom <- bind_rows(eq_curve(occ, bin_breaks) %>% mutate(Names = "All names (main)"),
                      eq_curve(occ %>% filter(Name_Status == "as identified"), bin_breaks) %>%
                        mutate(Names = "Names as identified only")) %>% mutate(Mid = (Older + Younger) / 2)
@@ -700,6 +715,32 @@ if (3 %in% run_modules && need("gdm", "Module 3") && need("vegan", "Module 3")) 
   dir3 <- mod_dir("M3_gdm")
   have_terra <- requireNamespace("terra", quietly = TRUE)
   clim_idx <- if (file.exists(file.path(work_dir, climate_index_file))) read_wd(climate_index_file) else NULL
+  # Build the index from the Oscillayers and Andermann folders when given.
+  if (is.null(clim_idx)) {
+    parts <- list()
+    if (!is.na(oscillayers_dir) && dir.exists(oscillayers_dir)) {
+      f <- list.files(oscillayers_dir, pattern = "\\.(asc|tif|tiff)$", recursive = TRUE, full.names = TRUE)
+      v <- sub(paste0(".*", osc_var_regex, ".*"), "\\1", basename(f)); v[!grepl(osc_var_regex, basename(f))] <- NA
+      tt <- suppressWarnings(as.numeric(sub(paste0(".*", osc_time_regex, ".*"), "\\1", basename(f))))
+      tt[!grepl(osc_time_regex, basename(f))] <- NA
+      ok <- !is.na(v) & !is.na(tt) & (tt %% osc_use_every == 0 | tt <= 3)
+      if (any(ok)) parts$osc <- data.frame(variable = c("1" = "MAT", "4" = "seasonality", "12" = "MAP")[v[ok]],
+                                           age_ka = tt[ok] * osc_ka_per_step, file = f[ok])
+      cat(sprintf("  Oscillayers: %d files matched (%s)\n", sum(ok), if (any(ok)) paste(names(table(parts$osc$variable)), collapse = ", ") else
+                  "check osc_var_regex / osc_time_regex against the file names"))
+    }
+    if (!is.na(andermann_dir) && dir.exists(andermann_dir)) {
+      f <- list.files(andermann_dir, pattern = "\\.(asc|tif|tiff|txt|csv)$", recursive = TRUE, full.names = TRUE)
+      tt <- suppressWarnings(as.numeric(sub(paste0(".*?", andermann_time_regex, ".*"), "\\1", basename(f))))
+      ok <- !is.na(tt)
+      if (any(ok)) parts$and <- data.frame(variable = "open_habitat", age_ka = tt[ok] * 1000, file = f[ok])
+      cat(sprintf("  Andermann et al. open-habitat files matched: %d\n", sum(ok)))
+    }
+    if (length(parts)) {
+      clim_idx <- bind_rows(parts) %>% filter(age_ka <= (max(sites$Max_Ma) + 0.5) * 1000)
+      write.csv(clim_idx, file.path(dir3, "M3_climate_index_used.csv"), row.names = FALSE)
+    }
+  }
   if (is.null(clim_idx)) cat("  No climate_index.csv: models use geographic distance and barriers only (H2 side of the test).\n",
                              "  Supply climate / open-habitat rasters to test H1 (see the notes at the end).\n")
   if (!is.null(clim_idx) && !have_terra) { cat("  terra is not installed - climate rasters skipped.\n"); clim_idx <- NULL }
@@ -711,7 +752,23 @@ if (3 %in% run_modules && need("gdm", "Module 3") && need("vegan", "Module 3")) 
     site_env <- data.frame(Site_Key = sites$Site_Key)
     for (v in unique(clim_idx$variable)) {
       iv <- clim_idx %>% filter(variable == v) %>% mutate(age_Ma = as.numeric(age_ka) / 1000)
-      vals <- sapply(seq_len(nrow(iv)), function(k) terra::extract(terra::rast(file.path(work_dir, iv$file[k])), pts)[, 2])
+      read_layer <- function(f) {
+        if (!file.exists(f)) f <- file.path(work_dir, f)
+        if (grepl("\\.(txt|csv)$", f)) {              # table with longitude, latitude, value -> raster
+          tb <- read.table(f, header = TRUE, sep = if (grepl("csv$", f)) "," else "", stringsAsFactors = FALSE)
+          nm <- tolower(names(tb))
+          xcol <- which(nm %in% c("lon", "long", "longitude", "x"))[1]; ycol <- which(nm %in% c("lat", "latitude", "y"))[1]
+          vcol <- setdiff(seq_along(nm), c(xcol, ycol))[1]
+          return(terra::rast(tb[, c(xcol, ycol, vcol)], type = "xyz", crs = "EPSG:4326"))
+        }
+        cache <- file.path(dir3, "raster_cache", paste0(make.names(basename(f)), ".tif"))   # cropped copy for later runs
+        if (file.exists(cache)) return(terra::rast(cache))
+        r <- terra::rast(f); if (is.na(terra::crs(r)) || terra::crs(r) == "") terra::crs(r) <- "EPSG:4326"
+        r <- terra::crop(r, terra::ext(-135, -55, 10, 62))
+        dir.create(dirname(cache), showWarnings = FALSE); terra::writeRaster(r, cache, overwrite = TRUE)
+        r
+      }
+      vals <- sapply(seq_len(nrow(iv)), function(k) terra::extract(read_layer(iv$file[k]), pts)[, 2])
       vals <- matrix(vals, nrow = nrow(sites))
       site_env[[v]] <- vapply(seq_len(nrow(sites)), function(i) {
         inr <- iv$age_Ma >= min(sites$Min_Ma[i], sites$Max_Ma[i]) & iv$age_Ma <= max(sites$Min_Ma[i], sites$Max_Ma[i])
@@ -720,6 +777,25 @@ if (3 %in% run_modules && need("gdm", "Module 3") && need("vegan", "Module 3")) 
       }, numeric(1))
     }
     write.csv(site_env, file.path(dir3, "M3_site_climate.csv"), row.names = FALSE)
+    # Quick first test (as Rowan et al. 2024 did with paleovegetation): beta_SIM per bin beside the
+    # mean environment of the sampled sites in each province and bin. Five bins = a visual check only.
+    bin_env <- occ %>% distinct(Time_Bin, Spatial_Bin, Site_Key) %>% left_join(site_env, by = "Site_Key") %>%
+      group_by(Time_Bin, Spatial_Bin) %>% summarise(across(any_of(c("MAT", "MAP", "seasonality", "open_habitat")),
+                                                          ~ mean(.x, na.rm = TRUE)), .groups = "drop")
+    beta_bin <- bind_rows(lapply(time_bins$Time_Bin, function(b) {
+      d <- occ %>% filter(Time_Bin == b) %>% distinct(Spatial_Bin, Species)
+      data.frame(Time_Bin = b, beta_SIM = beta_sim(lists_to_matrix(split(d$Species, d$Spatial_Bin))))
+    }))
+    write.csv(bin_env %>% left_join(beta_bin, by = "Time_Bin"), file.path(dir3, "M3_quick_test_beta_vs_environment.csv"), row.names = FALSE)
+    qt <- bin_env %>% pivot_longer(-c(Time_Bin, Spatial_Bin), names_to = "Variable", values_to = "Value") %>%
+      left_join(time_bins, by = "Time_Bin")
+    if (nrow(qt)) {
+      p <- ggplot(qt, aes(Mid, Value, colour = Spatial_Bin)) + bands_layer() + geom_line() + geom_point(size = 2) +
+        facet_wrap(~ Variable, scales = "free_y", nrow = 1) + scale_colour_manual(values = prov_cols, name = NULL) + x_scale +
+        labs(x = "Age (Ma)", y = NULL, caption = paste0("Mean of the sampled sites per province and bin (site values averaged over each site's age range).\n",
+                                                        "Compare with the beta_SIM curve (Module 0 / Chapter 1); a visual check only, as in Rowan et al. (2024).")) + theme_p()
+      save_fig(p, dir3, "M3_fig0_quick_test_environment_by_bin", 12, 4.6)
+    }
   }
   rough <- NULL
   if (!is.na(dem_file) && have_terra && file.exists(dem_file)) {
@@ -763,10 +839,11 @@ if (3 %in% run_modules && need("gdm", "Module 3") && need("vegan", "Module 3")) 
       res3[[length(res3) + 1]] <- data.frame(Group = gname, Time_Bin = b, Response = resp, n_cells = nrow(cd$m),
                                              deviance_explained = fit$explained, predictor = names(heights), spline_height = unname(heights))
       if (resp == "Sorensen" && gdm_perm > 0) {
-        vi <- tryCatch(suppressWarnings(gdm::gdm.varImp(sp, geo = TRUE, nPerm = gdm_perm, parallel = FALSE, predSelect = TRUE)),
+        quiet <- function(expr) { out <- NULL; invisible(capture.output(out <- suppressMessages(suppressWarnings(expr)))); out }
+        vi <- tryCatch(quiet(gdm::gdm.varImp(sp, geo = TRUE, nPerm = gdm_perm, parallel = FALSE, predSelect = TRUE)),
                        error = function(e) NULL)
         if (is.null(vi))            # backward elimination needs several predictors; fall back to the full model only
-          vi <- tryCatch(suppressWarnings(gdm::gdm.varImp(sp, geo = TRUE, nPerm = gdm_perm, parallel = FALSE, predSelect = FALSE)),
+          vi <- tryCatch(quiet(gdm::gdm.varImp(sp, geo = TRUE, nPerm = gdm_perm, parallel = FALSE, predSelect = FALSE)),
                          error = function(e) { message("  gdm.varImp (", gname, ", Bin ", b, "): ", conditionMessage(e)); NULL })
         if (!is.null(vi)) {
           imp <- as.data.frame(vi[[2]]); sig <- as.data.frame(vi[[3]])
@@ -875,9 +952,12 @@ if (6 %in% run_modules) {
   dir6 <- mod_dir("M6_endemics")
   origin_tab <- if (file.exists(file.path(work_dir, origins_file))) read_wd(origins_file) else NULL
   if (is.null(origin_tab)) cat("  No taxon_origins.csv (from ch2_immigrants.R): immigrant endemics cannot be identified; all count as native.\n")
-  origin_of <- function(sp) {
+  origin_of <- function(sp) {          # same rule as ch2_immigrants.R: immigrants arriving after immigrant_since_ma
     if (is.null(origin_tab)) return(rep("Native", length(sp)))
-    o <- setNames(origin_tab$Origin, origin_tab$Taxon)
+    ot <- origin_tab %>% mutate(Arrival_Ma = suppressWarnings(as.numeric(Arrival_Ma)),
+                                grp = ifelse(Origin %in% c("South American", "Eurasian") &
+                                               (is.na(Arrival_Ma) | Arrival_Ma <= immigrant_since_ma), Origin, "Native"))
+    o <- setNames(ot$grp, ot$Taxon)
     r <- ifelse(!is.na(o[sp]), o[sp], o[sub(" .*$", "", sp)]); ifelse(is.na(r), "Native", r)
   }
   pres <- occ %>% distinct(Time_Bin, Spatial_Bin, Species)
@@ -942,8 +1022,7 @@ notes <- c(
   "Read the modules against the plan's 'Reading the result' table; report each cause's share per bin.",
   "Module 0 is the gate: use its corrected curve, not the Chapter 1 curve, when interpreting the others.",
   "Province-bins below the cell quota are reported as insufficient; lower quotas are a sensitivity check only.",
-  "Identifications check: 'names as identified only' vs all names. The full Rowan four-matrix cf./aff. check",
-  "  needs Step 3d to write the alternative matrices.",
+  "The open-nomenclature (Step 3D) check is skipped.",
   "Module 1 uses igraph's Infomap on the bipartite network; confirm with the Infomap Bioregions app (input files written).",
   "Module 3 without climate_index.csv tests only distance and barriers (H2). Oscillayers scales one spatial pattern",
   "  through time: treat early-bin climate results as provisional and compare with PaleoClim snapshots.",
