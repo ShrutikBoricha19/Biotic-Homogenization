@@ -193,18 +193,19 @@ run_method <- function(method) {
   draws <- list(); status <- list()
   for (k in seq_len(nrow(time_bins))) {
     b <- time_bins$Time_Bin[k]
-    pools <- list(); cell_species <- list(); ok <- TRUE; why <- ""
+    pools <- list(); cell_species <- list(); why <- character(0)
     for (p in regions) {
       d <- occ %>% filter(Time_Bin == b, Spatial_Bin == p)
       cells <- unique(d$cell)
-      if (length(cells) < max(min_cells, quota)) { ok <- FALSE; why <- sprintf("%s: %d cells", p, length(cells)); break }
+      if (length(cells) < max(min_cells, quota)) { why <- c(why, sprintf("%s: %d cells", p, length(cells))); next }
       ce <- cell_xy[match(cells, cell_xy$cell), ]
       D <- gc_dist_km(ce$lon, ce$lat)
       pl <- if (method == "clustr") clustr_pools(D, quota) else cookie_pools(D, quota)
-      if (!length(pl)) { ok <- FALSE; why <- sprintf("%s: no %s holds %d cells", p, method, quota); break }
+      if (!length(pl)) { why <- c(why, sprintf("%s: no %s holds %d cells", p, method, quota)); next }
       pools[[p]] <- lapply(pl, function(ix) cells[ix])
       cell_species[[p]] <- split(d$Species, d$cell)
     }
+    ok <- !length(why); why <- paste(why, collapse = "; ")   # list every province that fails
     status[[length(status) + 1]] <- data.frame(Display_Bin = b, Sufficient = ok, Reason = why)
     if (!ok) { cat(sprintf("  Bin %d: insufficient (%s)\n", b, why)); next }
     vals <- numeric(n_iter); n_used <- integer(n_iter)
