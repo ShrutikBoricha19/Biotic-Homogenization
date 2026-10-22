@@ -74,7 +74,7 @@ exclude_taxa   <- character(0)   # e.g. c("Homo", "Bos", "Sus") to drop humans a
                                  # (left empty so the species match Step 7)
 spatial_methods <- c("clustr", "cookies")   # one figure per method; clustr first (main)
 cell_km        <- 100            # equal-area cell width (km)
-clustr_km      <- 1500           # clustr: maximum diameter of a cluster (km)
+clustr_km      <- 2000           # clustr: maximum diameter of a cluster (km); raise it if the log says "no clustr holds N cells"
 cookie_r_km    <- 750            # cookies: radius of the circle (km; Antell et al. 2020 used 750 and 1,500)
 min_cells      <- 5              # province-bins with fewer occupied cells are insufficient
 quota_cells    <- NA             # NA = automatic (smallest cell count among sufficient province-bins);
